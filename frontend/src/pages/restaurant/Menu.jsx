@@ -192,7 +192,7 @@ export default function RestaurantMenu() {
                                         <div key={dish._id} className={`dish-card ${!dish.availability ? 'unavailable' : ''}`}>
                                             <div className="dish-image">
                                                 {dish.image ? (
-                                                    <img src={`/uploads/${dish.image}`} alt={dish.food_name} />
+                                                    <img src={dish.image} alt={dish.food_name} />
                                                 ) : (
                                                     <div className="dish-placeholder">
                                                         <i className="fas fa-utensils"></i>

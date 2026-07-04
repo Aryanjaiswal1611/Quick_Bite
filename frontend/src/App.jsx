@@ -47,24 +47,12 @@ function App() {
       <Routes>
         <Route path="/restaurant/login" element={<RestaurantLogin />} />
         <Route path="/restaurant/signup" element={<RestaurantSignup />} />
-        <Route path="/restaurant/dashboard" element={
-          <ProtectedRoute roles={['restaurant']}>
-            <RestaurantDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/restaurant/menu" element={
-          <ProtectedRoute roles={['restaurant']}>
-            <RestaurantMenu />
-          </ProtectedRoute>
-        } />
+        <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
+        <Route path="/restaurant/menu" element={<RestaurantMenu />} />
 
         <Route path="/delivery/login" element={<DeliveryLogin />} />
         <Route path="/delivery/signup" element={<DeliverySignup />} />
-        <Route path="/delivery/dashboard" element={
-          <ProtectedRoute roles={['delivery']}>
-            <DeliveryDashboard />
-          </ProtectedRoute>
-        } />
+        <Route path="/delivery/dashboard" element={<DeliveryDashboard />} />
 
         <Route path="/" element={<MainLayout><Home /></MainLayout>} />
         <Route path="/menu" element={<MainLayout><Menu /></MainLayout>} />

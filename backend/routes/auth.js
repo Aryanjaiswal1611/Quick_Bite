@@ -121,7 +121,6 @@ router.post('/logout', (req, res) => {
 // ── GET /api/me ─────────────────────────────────────────
 router.get('/me', verifyToken, async (req, res) => {
     try {
-        const User = require('../models/User');
         const user = await User.findById(req.user.id).select('name email role');
         if (!user) return res.status(404).json({ loggedIn: false });
         res.json({

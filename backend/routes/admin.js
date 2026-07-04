@@ -123,7 +123,7 @@ router.post('/foods', ...requireAdmin, upload.single('image'), async (req, res) 
         if (!food_name || !price || !category || !restaurantId)
             return res.json({ success: false, message: 'Name, price, category, and restaurantId are required.' });
 
-        const imageFile = req.file ? req.file.filename : 'default.jpg';
+        const imageFile = req.file ? `/images/${req.file.filename}` : '/images/default.jpg';
 
         const food = await FoodItem.create({
             food_name: food_name.trim(),
@@ -170,7 +170,7 @@ router.put('/foods/:id', ...requireAdmin, upload.single('image'), async (req, re
         const updates = { ...otherUpdates };
         if (restaurantId) updates.restaurantId = restaurantId;
 
-        if (req.file) updates.image = req.file.filename;
+        if (req.file) updates.image = `/images/${req.file.filename}`;
 
         const food = await FoodItem.findByIdAndUpdate(id, updates, { new: true });
         res.json({ success: true, message: 'Food item updated!' });

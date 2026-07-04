@@ -23,7 +23,7 @@ const foodItemSchema = new mongoose.Schema({
     },
     image: {
         type: String,
-        default: 'default.jpg',
+        default: '/images/default.jpg',
     },
     is_featured: {
         type: Boolean,

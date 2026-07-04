@@ -93,7 +93,7 @@ export default function RestaurantLogin() {
 
                     <div className="auth-footer">
                         <p>
-                            Don't have an account?{' '}
+                            Don&apos;t have an account?{' '}
                             <Link to="/restaurant/signup">Register Restaurant</Link>
                         </p>
                         <Link to="/login" className="back-link">

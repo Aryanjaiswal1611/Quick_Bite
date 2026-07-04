@@ -1,7 +1,4 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const Restaurant = require('../models/Restaurant');
-const DeliveryPartner = require('../models/DeliveryPartner');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
@@ -34,13 +31,6 @@ const authorize = (roles = []) => {
     };
 };
 
-// Legacy support for session-based checks if needed during migration
-function isLoggedIn(req) {
-    return !!(req.user || (req.session && req.session.user_id));
-}
+module.exports = { verifyToken, authorize, JWT_SECRET };
 
-function isAdmin(req) {
-    return (req.user && req.user.role === 'admin') || (isLoggedIn(req) && req.session.role === 'admin');
-}
 
-module.exports = { verifyToken, authorize, isLoggedIn, isAdmin, JWT_SECRET };

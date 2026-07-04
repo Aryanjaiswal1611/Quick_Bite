@@ -154,20 +154,23 @@ router.get('/stream', requireRestaurant, (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const io = req.app.get('io');
-    const room = `restaurant_${req.user.id}`;
+    const orderEmitter = req.app.get('orderEmitter');
 
     const handleOrderUpdate = (data) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    io.to(room).on('new_order', handleOrderUpdate);
+    if (orderEmitter) {
+        orderEmitter.on(`new_order_${req.user.id}`, handleOrderUpdate);
+    }
 
     const intervalId = setInterval(() => { res.write(':\n\n'); }, 15000);
 
     req.on('close', () => {
         clearInterval(intervalId);
-        io.removeListener('new_order', handleOrderUpdate);
+        if (orderEmitter) {
+            orderEmitter.removeListener(`new_order_${req.user.id}`, handleOrderUpdate);
+        }
     });
 });
 

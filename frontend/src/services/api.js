@@ -1,10 +1,21 @@
 const BASE_URL = '/api'
 
-function getAuthHeaders() {
-  const token = localStorage.getItem('token')
-  return token
-    ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
+function getAuthHeaders(endpoint, isFormData = false) {
+  let token = localStorage.getItem('token')
+  if (endpoint.startsWith('/restaurant') || endpoint.startsWith('/dishes')) {
+    token = localStorage.getItem('restaurant_token')
+  } else if (endpoint.startsWith('/delivery')) {
+    token = localStorage.getItem('delivery_token')
+  }
+
+  const headers = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json'
+  }
+  return headers
 }
 
 async function handleResponse(response) {
@@ -16,10 +27,11 @@ async function handleResponse(response) {
 }
 
 async function request(method, endpoint, body = null) {
+  const isFormData = body instanceof FormData
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     method,
-    headers: getAuthHeaders(),
-    body: body ? JSON.stringify(body) : null
+    headers: getAuthHeaders(endpoint, isFormData),
+    body: isFormData ? body : (body ? JSON.stringify(body) : null)
   })
   return handleResponse(response)
 }

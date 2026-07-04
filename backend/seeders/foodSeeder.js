@@ -7,6 +7,8 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const FoodItem = require('../models/FoodItem');
+const Restaurant = require('../models/Restaurant');
+const bcrypt = require('bcryptjs');
 
 const sampleFoods = [
     // ── Burgers ──────────────────────────────────────────────────────────────
@@ -187,14 +189,44 @@ async function seed() {
 
         // Delete existing foods and cart items to prevent duplicates and broken refs
         await FoodItem.deleteMany({});
-        await mongoose.connection.collection('carts').deleteMany({});
+        try {
+            await mongoose.connection.collection('carts').deleteMany({});
+        } catch (e) {
+            // collection might not exist yet
+        }
         console.log('🗑️  Cleared existing food items and carts to reset image URLs');
 
-        await FoodItem.insertMany(sampleFoods);
+        // Create or find default seed restaurant so validation doesn't fail
+        let restaurant = await Restaurant.findOne({ email: 'kitchen@quickbite.com' });
+        if (!restaurant) {
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash('password123', salt);
+            restaurant = await Restaurant.create({
+                restaurantName: 'QuickBite Kitchen',
+                branchName: 'Downtown',
+                email: 'kitchen@quickbite.com',
+                password: hashedPassword,
+                isLoggedIn: true,
+                isActive: true
+            });
+            console.log('✅ Created default seed restaurant (kitchen@quickbite.com / password123)');
+        } else {
+            // Make sure restaurant is marked logged in and active so items show online
+            restaurant.isLoggedIn = true;
+            restaurant.isActive = true;
+            await restaurant.save();
+        }
+
+        const foodsToInsert = sampleFoods.map(food => ({
+            ...food,
+            restaurantId: restaurant._id
+        }));
+
+        await FoodItem.insertMany(foodsToInsert);
         console.log(`✅ Seeded ${sampleFoods.length} food items successfully!`);
         
     } catch (err) {
-        console.error('❌ Seeder error:', err.message);
+        console.error('❌ Seeder error:', err);
     } finally {
         await mongoose.disconnect();
         console.log('🔌 MongoDB Disconnected');

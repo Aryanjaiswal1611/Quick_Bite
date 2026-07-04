@@ -70,16 +70,22 @@ export default function DeliveryDashboard() {
     }
 
     const handleUpdateStatus = async (orderId, status) => {
+        let codeToSend = undefined
         if (status === 'Delivered') {
-            const code = window.prompt('Enter the 4-digit verification code from the customer:')
-            if (!code) return
-            setVerificationCode(code)
+            if (!verificationCode) {
+                const code = window.prompt('Enter the 4-digit verification code from the customer:')
+                if (!code) return
+                codeToSend = code
+            } else {
+                codeToSend = verificationCode
+            }
         }
 
         try {
-            const data = await deliveryApi.updateStatus(orderId, status, verificationCode || undefined)
+            const data = await deliveryApi.updateStatus(orderId, status, codeToSend)
             if (data.success) {
                 showToast(`Order marked as ${status}`, 'success')
+                setVerificationCode('')
                 loadOrders()
             }
         } catch (error) {

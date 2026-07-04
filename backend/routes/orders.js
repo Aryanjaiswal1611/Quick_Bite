@@ -5,6 +5,7 @@ const Cart = require('../models/Cart');
 const Order = require('../models/Order');
 const FoodItem = require('../models/FoodItem');
 const DeliveryPartner = require('../models/DeliveryPartner');
+const Restaurant = require('../models/Restaurant');
 const { verifyToken } = require('../middleware/auth');
 
 // ── POST /api/orders/place ────────────────────────────────────────────────────
@@ -14,17 +15,14 @@ router.post('/place', verifyToken, async (req, res) => {
         const { delivery_name, delivery_phone, delivery_address, payment_method, upiId, cardNumber, paymentStatus, transactionId } = req.body;
 
         if (!delivery_name || !delivery_phone || !delivery_address) {
-            console.log("Order place error: missing delivery fields", req.body);
             return res.json({ success: false, message: 'All delivery fields are required.' });
         }
 
         if (payment_method === 'upi' && !upiId) {
-            console.log("Order place error: missing upi fields", req.body);
             return res.json({ success: false, message: 'UPI ID is required for UPI payment.' });
         }
 
         if (payment_method === 'card' && !cardNumber) {
-            console.log("Order place error: missing card fields", req.body);
             return res.json({ success: false, message: 'Card number is required for Card payment.' });
         }
 
@@ -35,7 +33,6 @@ router.post('/place', verifyToken, async (req, res) => {
         cartItems = cartItems.filter(ci => ci.food_id);
         
         if (!cartItems.length) {
-            console.log("Order place error: cart empty or all items orphaned for user", userId);
             return res.json({ success: false, message: 'Your cart is empty or the items are no longer available.' });
         }
 
@@ -43,15 +40,12 @@ router.post('/place', verifyToken, async (req, res) => {
         const restaurantId = cartItems[0].food_id?.restaurantId;
 
         if (!restaurantId) {
-            console.log("Order place error: no restaurant ID on food item", cartItems[0]);
             return res.json({ success: false, message: 'Error: Items in cart are not associated with a restaurant.' });
         }
 
         // Check restaurant exists
-        const Restaurant = require('../models/Restaurant');
         const restaurant = await Restaurant.findById(restaurantId);
         if (!restaurant) {
-            console.log("Order place error: restaurant not found", restaurantId);
             return res.json({ success: false, message: 'Restaurant not found. Please try again.' });
         }
 
@@ -106,6 +100,11 @@ router.post('/place', verifyToken, async (req, res) => {
 
         const io = req.app.get('io');
         io.to(`restaurant_${order.restaurantId}`).emit('new_order', order);
+
+        const orderEmitter = req.app.get('orderEmitter');
+        if (orderEmitter) {
+            orderEmitter.emit(`new_order_${order.restaurantId}`, order);
+        }
 
         // Clear cart
         await Cart.deleteMany({ user_id: userId });

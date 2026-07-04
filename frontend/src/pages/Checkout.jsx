@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCart } from '../context/CartContext'
 import { useToast } from '../context/ToastContext'
-import { PageHeader, EmptyState } from '../components/UIComponents'
+import { PageHeader } from '../components/UIComponents'
 import { orderApi, paymentApi } from '../services/api'
 
 export default function Checkout() {

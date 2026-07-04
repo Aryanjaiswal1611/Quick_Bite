@@ -1,8 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const express = require('express');
 const session = require('express-session');
-const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
@@ -22,6 +22,10 @@ const feedbackRoutes = require('./routes/feedback');
 
 const app = express();
 const server = http.createServer(app);
+
+const EventEmitter = require('events');
+const orderEmitter = new EventEmitter();
+app.set('orderEmitter', orderEmitter);
 
 const PORT = process.env.PORT || 8000;
 
