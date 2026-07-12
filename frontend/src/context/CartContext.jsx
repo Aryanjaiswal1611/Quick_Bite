@@ -29,8 +29,8 @@ export function CartProvider({ children }) {
         setCount(data.count || 0)
         setTotal(data.total || 0)
       }
-    } catch (error) {
-      console.error('Failed to fetch cart:', error)
+    } catch {
+      // cart fetch failures are non-fatal (e.g. expired token)
     } finally {
       setLoading(false)
     }
@@ -50,14 +50,14 @@ export function CartProvider({ children }) {
         await fetchCart()
         return true
       }
-      if (data.redirect) {
-        showToast(data.message || 'Please login to continue.', 'info')
-        return false
-      }
       showToast(data.message || 'Something went wrong', 'error')
       return false
-    } catch {
-      showToast('Network error. Please try again.', 'error')
+    } catch (err) {
+      if (err.status === 401) {
+        showToast('Please login to add items to cart.', 'info')
+      } else {
+        showToast(err.message || 'Failed to add to cart', 'error')
+      }
       return false
     }
   }
@@ -73,8 +73,8 @@ export function CartProvider({ children }) {
       }
       showToast(data.message || 'Error updating cart', 'error')
       return null
-    } catch {
-      showToast('Network error. Please try again.', 'error')
+    } catch (err) {
+      showToast(err.message || 'Failed to update cart', 'error')
       return null
     }
   }
@@ -92,8 +92,8 @@ export function CartProvider({ children }) {
         return true
       }
       return false
-    } catch {
-      showToast('Network error. Please try again.', 'error')
+    } catch (err) {
+      showToast(err.message || 'Failed to remove item', 'error')
       return false
     }
   }

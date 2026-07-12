@@ -4,9 +4,18 @@ import { authApi } from '../services/api'
 const AuthContext = createContext(null)
 
 function buildUser(data) {
+  if (data.user) {
+    return {
+      id: data.user.id || data.user._id,
+      name: data.user.name,
+      email: data.user.email,
+      role: data.user.role
+    }
+  }
   return {
     id: data.user_id,
     name: data.user_name,
+    email: data.email,
     role: data.role
   }
 }
@@ -18,19 +27,22 @@ export function AuthProvider({ children }) {
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('token')
     if (!token) {
+      setUser(null)
       setLoading(false)
       return
     }
 
     try {
       const data = await authApi.getMe()
-      if (data.loggedIn) {
+      if (data.loggedIn || data.success) {
         setUser(buildUser(data))
       } else {
         localStorage.removeItem('token')
+        setUser(null)
       }
     } catch {
       localStorage.removeItem('token')
+      setUser(null)
     } finally {
       setLoading(false)
     }
@@ -61,26 +73,28 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await authApi.logout()
-    } catch (err) {
-      console.error('Logout error:', err)
+    } catch {
+      // clear local state regardless
     }
     localStorage.removeItem('token')
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin',
-      isRestaurant: user?.role === 'restaurant',
-      isDelivery: user?.role === 'delivery',
-      login,
-      signup,
-      logout,
-      checkAuth
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === 'admin',
+        isRestaurant: user?.role === 'restaurant',
+        isDelivery: user?.role === 'delivery',
+        login,
+        signup,
+        logout,
+        checkAuth
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

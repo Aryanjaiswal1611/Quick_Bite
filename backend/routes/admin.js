@@ -1,237 +1,261 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const mongoose = require('mongoose');
 const FoodItem = require('../models/FoodItem');
 const User = require('../models/User');
 const Order = require('../models/Order');
-const Cart = require('../models/Cart');
 const DeliveryPartner = require('../models/DeliveryPartner');
-const { verifyToken, authorize } = require('../middleware/auth');
-const requireAdmin = [verifyToken, authorize('admin')];
+const Restaurant = require('../models/Restaurant');
+const { requireAdmin } = require('../middleware/auth');
+const upload = require('../middleware/upload');
+const { asyncHandler } = require('../utils/response');
 
-// ── GET /api/admin/delivery-partners ──────────────────────────────────────
-router.get('/delivery-partners', ...requireAdmin, async (req, res) => {
-    try {
-        const partners = await DeliveryPartner.find({ is_online: true }).select('name vehicle_type current_location phone');
-        res.json({ success: true, partners });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error fetching partners.' });
+// ── GET /api/admin/delivery-partners ────────────────────────────────────────
+router.get(
+  '/delivery-partners',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const partners = await DeliveryPartner.find({ is_online: true }).select(
+      'name vehicle_type current_location phone'
+    );
+    return res.json({ success: true, partners });
+  })
+);
+
+// ── POST /api/admin/orders/:id/assign ───────────────────────────────────────
+router.post(
+  '/orders/:id/assign',
+  ...requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { partnerId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(partnerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid ID.' });
     }
-});
 
-// ── POST /api/admin/orders/:id/assign ────────────────────────────────────
-router.post('/orders/:id/assign', ...requireAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { partnerId } = req.body;
-        
-        if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(partnerId)) {
-            return res.status(400).json({ success: false, message: 'Invalid ID.' });
-        }
+    const order = await Order.findByIdAndUpdate(
+      id,
+      {
+        delivery_partner_id: partnerId,
+        'timeline.assigned_at': new Date(),
+      },
+      { new: true }
+    ).populate('delivery_partner_id', 'name phone');
 
-        const order = await Order.findByIdAndUpdate(
-            id,
-            { 
-                delivery_partner_id: partnerId,
-                'timeline.assigned_at': new Date()
-            },
-            { new: true }
-        ).populate('delivery_partner_id', 'name phone');
-
-        if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
-
-        const io = req.app.get('io');
-        io.to(`order_${order._id}`).emit('status_update', { orderId: order._id, status: order.orderStatus });
-        io.to(`delivery_${partnerId}`).emit('order_assigned', { partnerId, order });
-
-        res.json({ success: true, order, message: `Assigned to ${order.delivery_partner_id.name}` });
-    } catch (err) {
-        console.error('Assign order error:', err);
-        res.status(500).json({ success: false, message: 'Server error assigning order.' });
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
     }
-});
 
-// ── Multer config for food image uploads ─────────────────────────────────────
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dest = path.join(__dirname, '../../public/images');
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `food_${Date.now()}${ext}`);
-    },
-});
-const upload = multer({
-    storage,
-    limits: { fileSize: 3 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-        cb(null, allowed.includes(file.mimetype));
-    },
-});
-
-// ── GET /api/admin/stats ─────────────────────────────────────────────────────
-router.get('/stats', ...requireAdmin, async (req, res) => {
-    try {
-        const [foods, users, orders, revenueResult] = await Promise.all([
-            FoodItem.countDocuments(),
-            User.countDocuments({ role: 'user' }),
-            Order.countDocuments(),
-            Order.aggregate([
-                { $match: { orderStatus: 'Delivered' } },
-                { $group: { _id: null, total: { $sum: '$totalPrice' } } },
-            ]),
-        ]);
-
-        const revenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
-
-        const recentOrders = await Order.find()
-            .sort({ createdAt: -1 })
-            .limit(8)
-            .populate('userId', 'name');
-
-        res.json({
-            success: true,
-            stats: { foods, users, orders, revenue: parseFloat(revenue.toFixed(2)) },
-            recentOrders,
-        });
-    } catch (err) {
-        console.error('Admin stats error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`order_${order._id}`).emit('status_update', {
+        orderId: order._id,
+        status: order.orderStatus,
+      });
+      io.to(`delivery_${partnerId}`).emit('order_assigned', { partnerId, order });
     }
-});
 
-// ── GET /api/admin/foods ─────────────────────────────────────────────────────
-router.get('/foods', ...requireAdmin, async (req, res) => {
-    try {
-        const foods = await FoodItem.find().sort({ category: 1, food_name: 1 });
-        res.json({ success: true, foods });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    return res.json({
+      success: true,
+      order,
+      message: `Assigned to ${order.delivery_partner_id.name}`,
+    });
+  })
+);
+
+// ── GET /api/admin/stats ────────────────────────────────────────────────────
+router.get(
+  '/stats',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const [foods, users, orders, restaurants, revenueResult] = await Promise.all([
+      FoodItem.countDocuments(),
+      User.countDocuments({ role: 'user' }),
+      Order.countDocuments(),
+      Restaurant.countDocuments(),
+      Order.aggregate([
+        { $match: { orderStatus: 'Delivered' } },
+        { $group: { _id: null, total: { $sum: '$totalPrice' } } },
+      ]),
+    ]);
+
+    const revenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
+    const recentOrders = await Order.find()
+      .sort({ createdAt: -1 })
+      .limit(8)
+      .populate('userId', 'name');
+
+    return res.json({
+      success: true,
+      stats: {
+        foods,
+        users,
+        orders,
+        restaurants,
+        revenue: parseFloat(Number(revenue).toFixed(2)),
+      },
+      recentOrders,
+    });
+  })
+);
+
+// ── GET /api/admin/foods ────────────────────────────────────────────────────
+router.get(
+  '/foods',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const foods = await FoodItem.find()
+      .populate('restaurantId', 'restaurantName branchName')
+      .sort({ category: 1, food_name: 1 });
+    return res.json({ success: true, foods });
+  })
+);
+
+// ── POST /api/admin/foods ───────────────────────────────────────────────────
+router.post(
+  '/foods',
+  ...requireAdmin,
+  upload.single('image'),
+  asyncHandler(async (req, res) => {
+    const { food_name, description, price, category, is_featured, restaurantId } = req.body;
+    if (!food_name || !price || !category || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, price, category, and restaurantId are required.',
+      });
     }
-});
 
-// ── POST /api/admin/foods ─────────────────────────────────────────────────────
-router.post('/foods', ...requireAdmin, upload.single('image'), async (req, res) => {
-    try {
-        const { food_name, description, price, category, is_featured, restaurantId } = req.body;
-        if (!food_name || !price || !category || !restaurantId)
-            return res.json({ success: false, message: 'Name, price, category, and restaurantId are required.' });
+    const imageFile = req.file ? `/images/${req.file.filename}` : '/images/default.jpg';
+    await FoodItem.create({
+      food_name: food_name.trim(),
+      description: description ? description.trim() : '',
+      price: parseFloat(price),
+      category: category.trim(),
+      image: imageFile,
+      is_featured: !!is_featured,
+      restaurantId,
+    });
 
-        const imageFile = req.file ? `/images/${req.file.filename}` : '/images/default.jpg';
+    return res.status(201).json({ success: true, message: 'Food item added successfully!' });
+  })
+);
 
-        const food = await FoodItem.create({
-            food_name: food_name.trim(),
-            description: description ? description.trim() : '',
-            price: parseFloat(price),
-            category: category.trim(),
-            image: imageFile,
-            is_featured: !!is_featured,
-            restaurantId
-        });
-        res.json({ success: true, message: 'Food item added successfully!' });
-    } catch (err) {
-        console.error('Admin add food error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+// ── GET /api/admin/foods/:id ────────────────────────────────────────────────
+router.get(
+  '/foods/:id',
+  ...requireAdmin,
+  asyncHandler(async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ success: false, message: 'Not found.' });
     }
-});
-
-// ── GET /api/admin/foods/:id ──────────────────────────────────────────────────
-router.get('/foods/:id', ...requireAdmin, async (req, res) => {
-    try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id))
-            return res.status(404).json({ success: false, message: 'Not found.' });
-
-        const food = await FoodItem.findById(req.params.id);
-        if (!food) return res.status(404).json({ success: false, message: 'Not found.' });
-        res.json({ success: true, food });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    const food = await FoodItem.findById(req.params.id);
+    if (!food) {
+      return res.status(404).json({ success: false, message: 'Not found.' });
     }
-});
+    return res.json({ success: true, food });
+  })
+);
 
-// ── PUT /api/admin/foods/:id ──────────────────────────────────────────────────
-router.put('/foods/:id', ...requireAdmin, upload.single('image'), async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(id))
-            return res.status(404).json({ success: false, message: 'Not found.' });
-
-        const { food_name, description, price, category, is_featured } = req.body;
-        if (!food_name || !price || !category)
-            return res.json({ success: false, message: 'Name, price, and category are required.' });
-
-        const { restaurantId, ...otherUpdates } = req.body;
-        const updates = { ...otherUpdates };
-        if (restaurantId) updates.restaurantId = restaurantId;
-
-        if (req.file) updates.image = `/images/${req.file.filename}`;
-
-        const food = await FoodItem.findByIdAndUpdate(id, updates, { new: true });
-        res.json({ success: true, message: 'Food item updated!' });
-    } catch (err) {
-        console.error('Admin update food error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+// ── PUT /api/admin/foods/:id ────────────────────────────────────────────────
+router.put(
+  '/foods/:id',
+  ...requireAdmin,
+  upload.single('image'),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Not found.' });
     }
-});
 
-// ── DELETE /api/admin/foods/:id ───────────────────────────────────────────────
-router.delete('/foods/:id', ...requireAdmin, async (req, res) => {
-    try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id))
-            return res.status(404).json({ success: false, message: 'Not found.' });
-
-        await FoodItem.findByIdAndDelete(req.params.id);
-        res.json({ success: true, message: 'Food item deleted.' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    const { food_name, description, price, category, is_featured, restaurantId } = req.body;
+    if (!food_name || !price || !category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, price, and category are required.',
+      });
     }
-});
 
-// ── GET /api/admin/orders ─────────────────────────────────────────────────────
-router.get('/orders', ...requireAdmin, async (req, res) => {
-    try {
-        const orders = await Order.find()
-            .sort({ createdAt: -1 })
-            .populate('userId', 'name email');
-        res.json({ success: true, orders });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    const updates = {
+      food_name: food_name.trim(),
+      description: description ? description.trim() : '',
+      price: parseFloat(price),
+      category: category.trim(),
+      is_featured: !!is_featured,
+    };
+    if (restaurantId) updates.restaurantId = restaurantId;
+    if (req.file) updates.image = `/images/${req.file.filename}`;
+
+    await FoodItem.findByIdAndUpdate(id, updates);
+    return res.json({ success: true, message: 'Food item updated!' });
+  })
+);
+
+// ── DELETE /api/admin/foods/:id ─────────────────────────────────────────────
+router.delete(
+  '/foods/:id',
+  ...requireAdmin,
+  asyncHandler(async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ success: false, message: 'Not found.' });
     }
-});
+    await FoodItem.findByIdAndDelete(req.params.id);
+    return res.json({ success: true, message: 'Food item deleted.' });
+  })
+);
 
-// ── PUT /api/admin/orders/:id/status ─────────────────────────────────────────
-router.put('/orders/:id/status', ...requireAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { status } = req.body;
-        const allowed = ['Placed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'];
+// ── GET /api/admin/orders ───────────────────────────────────────────────────
+router.get(
+  '/orders',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const orders = await Order.find()
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name email')
+      .populate('restaurantId', 'restaurantName branchName');
+    return res.json({ success: true, orders });
+  })
+);
 
-        if (!mongoose.Types.ObjectId.isValid(id))
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-        if (!allowed.includes(status))
-            return res.json({ success: false, message: 'Invalid status.' });
+// ── PUT /api/admin/orders/:id/status ────────────────────────────────────────
+router.put(
+  '/orders/:id/status',
+  ...requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const allowed = ['Placed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'];
 
-        await Order.findByIdAndUpdate(id, { orderStatus: status });
-        res.json({ success: true, message: `Order updated to ${status}.` });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
     }
-});
-
-// ── GET /api/admin/users ──────────────────────────────────────────────────────
-router.get('/users', ...requireAdmin, async (req, res) => {
-    try {
-        const users = await User.find({ role: 'user' }, '-password').sort({ createdAt: -1 });
-        res.json({ success: true, users });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error.' });
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
     }
-});
+
+    await Order.findByIdAndUpdate(id, { orderStatus: status });
+    return res.json({ success: true, message: `Order updated to ${status}.` });
+  })
+);
+
+// ── GET /api/admin/users ────────────────────────────────────────────────────
+router.get(
+  '/users',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const users = await User.find({ role: 'user' }, '-password').sort({ createdAt: -1 });
+    return res.json({ success: true, users });
+  })
+);
+
+// ── GET /api/admin/restaurants ──────────────────────────────────────────────
+router.get(
+  '/restaurants',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const restaurants = await Restaurant.find().select('-password').sort({ createdAt: -1 });
+    return res.json({ success: true, restaurants });
+  })
+);
 
 module.exports = router;

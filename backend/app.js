@@ -1,13 +1,16 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-
+const fs = require('fs');
 const express = require('express');
+const cors = require('cors');
 const session = require('express-session');
 const http = require('http');
 const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
+const EventEmitter = require('events');
 
+const config = require('./config/env');
 const connectDB = require('./config/db');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const authRoutes = require('./routes/auth');
 const foodRoutes = require('./routes/food');
@@ -22,39 +25,75 @@ const feedbackRoutes = require('./routes/feedback');
 
 const app = express();
 const server = http.createServer(app);
-
-const EventEmitter = require('events');
 const orderEmitter = new EventEmitter();
 app.set('orderEmitter', orderEmitter);
 
-const PORT = process.env.PORT || 8000;
-
 connectDB();
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ── CORS ────────────────────────────────────────────────────────────────────
+const corsOptions = {
+  origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((s) => s.trim()),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
 
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// ── Rate limiting ───────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
-    windowMs: 10 * 1000,
-    max: 100,
-    message: 'Too many requests from this IP, please try again after 10 sec',
-    standardHeaders: true,
-    legacyHeaders: false,
+  windowMs: 15 * 60 * 1000,
+  max: config.isProduction ? 300 : 1000,
+  message: { success: false, message: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { success: false, message: 'Too many authentication attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use(globalLimiter);
 
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'quickbite_secret',
+// ── Session (legacy support; primary auth is JWT) ───────────────────────────
+app.use(
+  session({
+    secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000
-    }
-}));
+      httpOnly: true,
+      secure: config.isProduction,
+      maxAge: 24 * 60 * 60 * 1000,
+      sameSite: config.isProduction ? 'none' : 'lax',
+    },
+  })
+);
 
-app.use(express.static(path.join(__dirname, '../public')));
+// ── Static assets ───────────────────────────────────────────────────────────
+app.use('/images', express.static(path.join(__dirname, 'public/images')));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Production: serve built React app
+const frontendDist = path.join(__dirname, '../frontend/dist');
+const hasFrontendBuild = fs.existsSync(path.join(frontendDist, 'index.html'));
+if (hasFrontendBuild) {
+  app.use(express.static(frontendDist));
+}
+
+// ── API routes ──────────────────────────────────────────────────────────────
+app.use('/api/login', authLimiter);
+app.use('/api/signup', authLimiter);
+app.use('/api/restaurant/login', authLimiter);
+app.use('/api/restaurant/signup', authLimiter);
+app.use('/api/delivery/login', authLimiter);
+app.use('/api/delivery/signup', authLimiter);
 
 app.use('/api', authRoutes);
 app.use('/api/foods', foodRoutes);
@@ -67,47 +106,79 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/feedback', feedbackRoutes);
 
-const io = new Server(server, {
-    cors: {
-        origin: '*'
-    }
+app.get('/api/health', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'QuickBite API is healthy',
+    data: {
+      env: config.nodeEnv,
+      timestamp: new Date().toISOString(),
+    },
+  });
 });
 
+// ── Socket.IO ───────────────────────────────────────────────────────────────
+const io = new Server(server, {
+  cors: {
+    origin: config.corsOrigin === '*' ? '*' : config.corsOrigin.split(',').map((s) => s.trim()),
+    methods: ['GET', 'POST'],
+  },
+});
 app.set('io', io);
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+  socket.on('join_order_room', (orderId) => {
+    if (orderId) socket.join(`order_${orderId}`);
+  });
 
-    socket.on('join_order_room', (orderId) => {
-        socket.join(`order_${orderId}`);
-        console.log(`Socket joined order_${orderId}`);
-    });
+  socket.on('join_restaurant_room', (restaurantId) => {
+    if (restaurantId) socket.join(`restaurant_${restaurantId}`);
+  });
 
-    socket.on('join_restaurant_room', (restaurantId) => {
-        socket.join(`restaurant_${restaurantId}`);
-        console.log(`Restaurant room joined: ${restaurantId}`);
-    });
+  socket.on('join_delivery_room', (partnerId) => {
+    if (partnerId) socket.join(`delivery_${partnerId}`);
+  });
 
-    socket.on('delivery_location_update', (data) => {
-        io.to(`order_${data.orderId}`).emit('location_update', {
-            lat: data.lat,
-            lng: data.lng,
-            time: new Date()
-        });
+  socket.on('delivery_location_update', (data) => {
+    if (!data?.orderId) return;
+    io.to(`order_${data.orderId}`).emit('location_update', {
+      lat: data.lat,
+      lng: data.lng,
+      time: new Date(),
     });
-
-    socket.on('disconnect', () => {
-        console.log('Socket disconnected:', socket.id);
-    });
+  });
 });
 
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
+// ── Error / 404 for API ─────────────────────────────────────────────────────
+app.use(notFoundHandler);
+
+// SPA fallback (non-API)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  if (hasFrontendBuild) {
+    return res.sendFile(path.join(frontendDist, 'index.html'));
+  }
+  return res.status(404).json({
+    success: false,
+    message: 'Frontend build not found. Run `npm run build` in the frontend folder, or use the Vite dev server.',
+  });
 });
 
-server.listen(PORT, () => {
-    console.log('=================================');
-    console.log(`🚀 QuickBite Server Running`);
-    console.log(`🌐 http://localhost:${PORT}`);
-    console.log('=================================');
+app.use(errorHandler);
+
+server.listen(config.port, () => {
+  // eslint-disable-next-line no-console
+  console.log('=================================');
+  // eslint-disable-next-line no-console
+  console.log('QuickBite Server Running');
+  // eslint-disable-next-line no-console
+  console.log(`http://localhost:${config.port}`);
+  // eslint-disable-next-line no-console
+  console.log(`Environment: ${config.nodeEnv}`);
+  // eslint-disable-next-line no-console
+  console.log('=================================');
 });
+
+module.exports = { app, server };

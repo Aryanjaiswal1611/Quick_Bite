@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
@@ -11,12 +11,14 @@ export default function Login() {
   const { login, isAuthenticated } = useAuth()
   const { showToast } = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = location.state?.from?.pathname || '/menu'
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/menu')
+      navigate(from, { replace: true })
     }
-  }, [isAuthenticated, navigate])
+  }, [isAuthenticated, navigate, from])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -27,13 +29,12 @@ export default function Login() {
       const data = await login(email, password)
       if (data.success) {
         showToast('Login successful! Redirecting…', 'success')
-        const redirect = data.redirect || '/menu'
-        setTimeout(() => navigate(redirect), 800)
+        navigate(data.redirect || from)
       } else {
         setError(data.message || 'Login failed.')
       }
     } catch (err) {
-      setError('Network error. Please try again.')
+      setError(err.message || 'Network error. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -42,7 +43,9 @@ export default function Login() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <div className="auth-logo"><i className="fas fa-fire-alt"></i> QuickBite</div>
+        <div className="auth-logo">
+          <i className="fas fa-fire-alt"></i> QuickBite
+        </div>
         <h2 className="auth-title">Welcome Back!</h2>
         <p className="auth-subtitle">Sign in to your account to continue</p>
 
@@ -55,7 +58,9 @@ export default function Login() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address</label>
+            <label className="form-label" htmlFor="email">
+              Email Address
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-envelope"></i>
               <input
@@ -65,13 +70,16 @@ export default function Login() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 required
               />
             </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
+            <label className="form-label" htmlFor="password">
+              Password
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-lock"></i>
               <input
@@ -81,16 +89,26 @@ export default function Login() {
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading} style={{ marginTop: '8px' }}>
+          <button
+            type="submit"
+            className="btn btn-primary btn-block btn-lg"
+            disabled={loading}
+            style={{ marginTop: '8px' }}
+          >
             {loading ? (
-              <><i className="fas fa-spinner fa-spin"></i> Signing in…</>
+              <>
+                <i className="fas fa-spinner fa-spin"></i> Signing in…
+              </>
             ) : (
-              <><i className="fas fa-sign-in-alt"></i> Login</>
+              <>
+                <i className="fas fa-sign-in-alt"></i> Login
+              </>
             )}
           </button>
         </form>

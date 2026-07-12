@@ -1,16 +1,35 @@
-const BASE_URL = '/api'
+/**
+ * API client — all frontend requests go through here.
+ * Base URL is configurable via VITE_API_URL (empty = same-origin / Vite proxy).
+ */
+
+const BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '') + '/api'
+
+export class ApiError extends Error {
+  constructor(message, { status = 0, errors = null, data = null } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.errors = errors
+    this.data = data
+  }
+}
+
+function getTokenForEndpoint(endpoint) {
+  if (endpoint.startsWith('/restaurant') || endpoint.startsWith('/dishes')) {
+    return localStorage.getItem('restaurant_token')
+  }
+  if (endpoint.startsWith('/delivery')) {
+    return localStorage.getItem('delivery_token')
+  }
+  return localStorage.getItem('token')
+}
 
 function getAuthHeaders(endpoint, isFormData = false) {
-  let token = localStorage.getItem('token')
-  if (endpoint.startsWith('/restaurant') || endpoint.startsWith('/dishes')) {
-    token = localStorage.getItem('restaurant_token')
-  } else if (endpoint.startsWith('/delivery')) {
-    token = localStorage.getItem('delivery_token')
-  }
-
+  const token = getTokenForEndpoint(endpoint)
   const headers = {}
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+    headers.Authorization = `Bearer ${token}`
   }
   if (!isFormData) {
     headers['Content-Type'] = 'application/json'
@@ -19,21 +38,46 @@ function getAuthHeaders(endpoint, isFormData = false) {
 }
 
 async function handleResponse(response) {
-  const data = await response.json()
-  if (!response.ok) {
-    throw new Error(data.message || 'Request failed')
+  let data = null
+  const contentType = response.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json()
+    } catch {
+      data = null
+    }
   }
-  return data
+
+  if (!response.ok) {
+    throw new ApiError(
+      data?.message || `Request failed (${response.status})`,
+      {
+        status: response.status,
+        errors: data?.errors || null,
+        data
+      }
+    )
+  }
+
+  return data ?? { success: true }
 }
 
 async function request(method, endpoint, body = null) {
   const isFormData = body instanceof FormData
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    method,
-    headers: getAuthHeaders(endpoint, isFormData),
-    body: isFormData ? body : (body ? JSON.stringify(body) : null)
-  })
-  return handleResponse(response)
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      method,
+      headers: getAuthHeaders(endpoint, isFormData),
+      body: isFormData ? body : (body != null ? JSON.stringify(body) : null)
+    })
+    return handleResponse(response)
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError(err.message || 'Network error. Please check your connection.', {
+      status: 0
+    })
+  }
 }
 
 export const api = {
@@ -101,7 +145,8 @@ export const dishesApi = {
   create: (formData) => api.post('/dishes', formData),
   update: (id, formData) => api.put(`/dishes/${id}`, formData),
   delete: (id) => api.delete(`/dishes/${id}`, {}),
-  toggleAvailability: (id, availability) => api.patch(`/dishes/${id}/availability`, { availability })
+  toggleAvailability: (id, availability) =>
+    api.patch(`/dishes/${id}/availability`, { availability })
 }
 
 export const deliveryApi = {
@@ -112,7 +157,8 @@ export const deliveryApi = {
   toggleStatus: (is_online) => api.post('/delivery/toggle-status', { is_online }),
   getOrders: () => api.get('/delivery/orders'),
   updateStatus: (id, status, verificationCode) =>
-    api.post(`/delivery/orders/${id}/status`, { status, verificationCode })
+    api.post(`/delivery/orders/${id}/status`, { status, verificationCode }),
+  getEarnings: () => api.get('/delivery/earnings')
 }
 
 export const adminApi = {
@@ -120,6 +166,7 @@ export const adminApi = {
   getFoods: () => api.get('/admin/foods'),
   getOrders: () => api.get('/admin/orders'),
   getUsers: () => api.get('/admin/users'),
-  assignPartner: (orderId, partnerId) => api.post(`/admin/orders/${orderId}/assign`, { partnerId }),
+  assignPartner: (orderId, partnerId) =>
+    api.post(`/admin/orders/${orderId}/assign`, { partnerId }),
   updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}/status`, { status })
 }

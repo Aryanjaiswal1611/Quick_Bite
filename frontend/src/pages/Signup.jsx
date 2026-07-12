@@ -24,9 +24,9 @@ export default function Signup() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }))
+    setFormData((prev) => ({ ...prev, [name]: value }))
+    if (errors[name] || errors.confirm) {
+      setErrors((prev) => ({ ...prev, [name]: '', confirm: '' }))
     }
   }
 
@@ -35,8 +35,12 @@ export default function Signup() {
     if (!formData.name.trim()) newErrors.name = 'Full name is required.'
     if (!formData.email) newErrors.email = 'Email is required.'
     else if (!/^\S+@\S+\.\S+$/.test(formData.email)) newErrors.email = 'Invalid email address.'
-    if (!formData.password || formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters.'
-    if (formData.password !== formData.confirm_password) newErrors.confirm = 'Passwords do not match.'
+    if (!formData.password || formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters.'
+    }
+    if (formData.password !== formData.confirm_password) {
+      newErrors.confirm = 'Passwords do not match.'
+    }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -50,14 +54,18 @@ export default function Signup() {
       const data = await signup(formData)
       if (data.success) {
         showToast('Account created! Redirecting…', 'success')
-        setTimeout(() => navigate(data.redirect || '/menu'), 800)
+        navigate(data.redirect || '/menu')
       } else if (data.errors) {
         setErrors(data.errors)
       } else {
         showToast(data.message || 'Signup failed.', 'error')
       }
     } catch (err) {
-      showToast('Network error. Please try again.', 'error')
+      if (err.errors) {
+        setErrors(err.errors)
+      } else {
+        showToast(err.message || 'Network error. Please try again.', 'error')
+      }
     } finally {
       setLoading(false)
     }
@@ -66,13 +74,17 @@ export default function Signup() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <div className="auth-logo"><i className="fas fa-fire-alt"></i> QuickBite</div>
+        <div className="auth-logo">
+          <i className="fas fa-fire-alt"></i> QuickBite
+        </div>
         <h2 className="auth-title">Create Account</h2>
         <p className="auth-subtitle">Join thousands of happy customers today</p>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="name">Full Name</label>
+            <label className="form-label" htmlFor="name">
+              Full Name
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-user"></i>
               <input
@@ -83,6 +95,7 @@ export default function Signup() {
                 placeholder="Your full name"
                 value={formData.name}
                 onChange={handleChange}
+                autoComplete="name"
               />
             </div>
             {errors.name && (
@@ -94,7 +107,9 @@ export default function Signup() {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address</label>
+            <label className="form-label" htmlFor="email">
+              Email Address
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-envelope"></i>
               <input
@@ -105,6 +120,7 @@ export default function Signup() {
                 placeholder="you@example.com"
                 value={formData.email}
                 onChange={handleChange}
+                autoComplete="email"
               />
             </div>
             {errors.email && (
@@ -116,7 +132,9 @@ export default function Signup() {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
+            <label className="form-label" htmlFor="password">
+              Password
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-lock"></i>
               <input
@@ -127,6 +145,7 @@ export default function Signup() {
                 placeholder="Minimum 6 characters"
                 value={formData.password}
                 onChange={handleChange}
+                autoComplete="new-password"
               />
             </div>
             {errors.password && (
@@ -138,7 +157,9 @@ export default function Signup() {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="confirm_password">Confirm Password</label>
+            <label className="form-label" htmlFor="confirm_password">
+              Confirm Password
+            </label>
             <div className="input-icon-wrapper">
               <i className="fas fa-lock"></i>
               <input
@@ -149,6 +170,7 @@ export default function Signup() {
                 placeholder="Re-enter your password"
                 value={formData.confirm_password}
                 onChange={handleChange}
+                autoComplete="new-password"
               />
             </div>
             {errors.confirm && (
@@ -159,11 +181,20 @@ export default function Signup() {
             )}
           </div>
 
-          <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading} style={{ marginTop: '8px' }}>
+          <button
+            type="submit"
+            className="btn btn-primary btn-block btn-lg"
+            disabled={loading}
+            style={{ marginTop: '8px' }}
+          >
             {loading ? (
-              <><i className="fas fa-spinner fa-spin"></i> Creating account…</>
+              <>
+                <i className="fas fa-spinner fa-spin"></i> Creating account…
+              </>
             ) : (
-              <><i className="fas fa-user-plus"></i> Create Account</>
+              <>
+                <i className="fas fa-user-plus"></i> Create Account
+              </>
             )}
           </button>
         </form>

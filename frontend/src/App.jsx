@@ -1,29 +1,39 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { useEffect } from 'react'
-import { useAuth } from './context/AuthContext'
-
-import Home from './pages/Home'
-import Menu from './pages/Menu'
-import Login from './pages/Login'
-import Signup from './pages/Signup'
-import Cart from './pages/Cart'
-import Checkout from './pages/Checkout'
-import OrderSuccess from './pages/OrderSuccess'
-import OrderHistory from './pages/OrderHistory'
-import OrderTracking from './pages/OrderTracking'
-
-import RestaurantLogin from './pages/restaurant/Login'
-import RestaurantSignup from './pages/restaurant/Signup'
-import RestaurantDashboard from './pages/restaurant/Dashboard'
-import RestaurantMenu from './pages/restaurant/Menu'
-
-import DeliveryLogin from './pages/delivery/Login'
-import DeliverySignup from './pages/delivery/Signup'
-import DeliveryDashboard from './pages/delivery/Dashboard'
 
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
-import ProtectedRoute from './components/ProtectedRoute'
+import ProtectedRoute, {
+  RestaurantProtectedRoute,
+  DeliveryProtectedRoute
+} from './components/ProtectedRoute'
+
+const Home = lazy(() => import('./pages/Home'))
+const Menu = lazy(() => import('./pages/Menu'))
+const Login = lazy(() => import('./pages/Login'))
+const Signup = lazy(() => import('./pages/Signup'))
+const Cart = lazy(() => import('./pages/Cart'))
+const Checkout = lazy(() => import('./pages/Checkout'))
+const OrderSuccess = lazy(() => import('./pages/OrderSuccess'))
+const OrderHistory = lazy(() => import('./pages/OrderHistory'))
+const OrderTracking = lazy(() => import('./pages/OrderTracking'))
+
+const RestaurantLogin = lazy(() => import('./pages/restaurant/Login'))
+const RestaurantSignup = lazy(() => import('./pages/restaurant/Signup'))
+const RestaurantDashboard = lazy(() => import('./pages/restaurant/Dashboard'))
+const RestaurantMenu = lazy(() => import('./pages/restaurant/Menu'))
+
+const DeliveryLogin = lazy(() => import('./pages/delivery/Login'))
+const DeliverySignup = lazy(() => import('./pages/delivery/Signup'))
+const DeliveryDashboard = lazy(() => import('./pages/delivery/Dashboard'))
+
+function PageLoader() {
+  return (
+    <div className="loading-screen">
+      <div className="spinner"></div>
+    </div>
+  )
+}
 
 function MainLayout({ children }) {
   return (
@@ -36,52 +46,84 @@ function MainLayout({ children }) {
 }
 
 function App() {
-  const { checkAuth } = useAuth()
-
-  useEffect(() => {
-    checkAuth()
-  }, [checkAuth])
-
   return (
     <div className="app">
-      <Routes>
-        <Route path="/restaurant/login" element={<RestaurantLogin />} />
-        <Route path="/restaurant/signup" element={<RestaurantSignup />} />
-        <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
-        <Route path="/restaurant/menu" element={<RestaurantMenu />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Restaurant panel */}
+          <Route path="/restaurant/login" element={<RestaurantLogin />} />
+          <Route path="/restaurant/signup" element={<RestaurantSignup />} />
+          <Route
+            path="/restaurant/dashboard"
+            element={
+              <RestaurantProtectedRoute>
+                <RestaurantDashboard />
+              </RestaurantProtectedRoute>
+            }
+          />
+          <Route
+            path="/restaurant/menu"
+            element={
+              <RestaurantProtectedRoute>
+                <RestaurantMenu />
+              </RestaurantProtectedRoute>
+            }
+          />
 
-        <Route path="/delivery/login" element={<DeliveryLogin />} />
-        <Route path="/delivery/signup" element={<DeliverySignup />} />
-        <Route path="/delivery/dashboard" element={<DeliveryDashboard />} />
+          {/* Delivery panel */}
+          <Route path="/delivery/login" element={<DeliveryLogin />} />
+          <Route path="/delivery/signup" element={<DeliverySignup />} />
+          <Route
+            path="/delivery/dashboard"
+            element={
+              <DeliveryProtectedRoute>
+                <DeliveryDashboard />
+              </DeliveryProtectedRoute>
+            }
+          />
 
-        <Route path="/" element={<MainLayout><Home /></MainLayout>} />
-        <Route path="/menu" element={<MainLayout><Menu /></MainLayout>} />
-        <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
-        <Route path="/signup" element={<MainLayout><Signup /></MainLayout>} />
-        <Route path="/cart" element={<MainLayout><Cart /></MainLayout>} />
-        <Route path="/checkout" element={
-          <ProtectedRoute>
-            <MainLayout><Checkout /></MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/order-success" element={
-          <ProtectedRoute>
-            <MainLayout><OrderSuccess /></MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/order-history" element={
-          <ProtectedRoute>
-            <MainLayout><OrderHistory /></MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/tracking" element={
-          <ProtectedRoute>
-            <MainLayout><OrderTracking /></MainLayout>
-          </ProtectedRoute>
-        } />
+          {/* Customer app */}
+          <Route path="/" element={<MainLayout><Home /></MainLayout>} />
+          <Route path="/menu" element={<MainLayout><Menu /></MainLayout>} />
+          <Route path="/login" element={<MainLayout><Login /></MainLayout>} />
+          <Route path="/signup" element={<MainLayout><Signup /></MainLayout>} />
+          <Route path="/cart" element={<MainLayout><Cart /></MainLayout>} />
+          <Route
+            path="/checkout"
+            element={
+              <ProtectedRoute>
+                <MainLayout><Checkout /></MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/order-success"
+            element={
+              <ProtectedRoute>
+                <MainLayout><OrderSuccess /></MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/order-history"
+            element={
+              <ProtectedRoute>
+                <MainLayout><OrderHistory /></MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tracking"
+            element={
+              <ProtectedRoute>
+                <MainLayout><OrderTracking /></MainLayout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="*" element={<MainLayout><Home /></MainLayout>} />
-      </Routes>
+          <Route path="*" element={<MainLayout><Home /></MainLayout>} />
+        </Routes>
+      </Suspense>
     </div>
   )
 }

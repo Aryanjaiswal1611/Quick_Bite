@@ -6,221 +6,273 @@ const Order = require('../models/Order');
 const FoodItem = require('../models/FoodItem');
 const DeliveryPartner = require('../models/DeliveryPartner');
 const Restaurant = require('../models/Restaurant');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requireUser, requireAdmin } = require('../middleware/auth');
+const { asyncHandler } = require('../utils/response');
 
-// ── POST /api/orders/place ────────────────────────────────────────────────────
-router.post('/place', verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { delivery_name, delivery_phone, delivery_address, payment_method, upiId, cardNumber, paymentStatus, transactionId } = req.body;
+// ── POST /api/orders/place ──────────────────────────────────────────────────
+router.post(
+  '/place',
+  ...requireUser,
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const {
+      delivery_name,
+      delivery_phone,
+      delivery_address,
+      payment_method,
+      upiId,
+      cardNumber,
+      paymentStatus,
+      transactionId,
+    } = req.body;
 
-        if (!delivery_name || !delivery_phone || !delivery_address) {
-            return res.json({ success: false, message: 'All delivery fields are required.' });
-        }
-
-        if (payment_method === 'upi' && !upiId) {
-            return res.json({ success: false, message: 'UPI ID is required for UPI payment.' });
-        }
-
-        if (payment_method === 'card' && !cardNumber) {
-            return res.json({ success: false, message: 'Card number is required for Card payment.' });
-        }
-
-        // Fetch cart with food info and restaurantId
-        let cartItems = await Cart.find({ user_id: userId }).populate('food_id');
-        
-        // FILTER: Remove any items where the food record no longer exists (orphaned refs)
-        cartItems = cartItems.filter(ci => ci.food_id);
-        
-        if (!cartItems.length) {
-            return res.json({ success: false, message: 'Your cart is empty or the items are no longer available.' });
-        }
-
-        // Get restaurantId from the first item
-        const restaurantId = cartItems[0].food_id?.restaurantId;
-
-        if (!restaurantId) {
-            return res.json({ success: false, message: 'Error: Items in cart are not associated with a restaurant.' });
-        }
-
-        // Check restaurant exists
-        const restaurant = await Restaurant.findById(restaurantId);
-        if (!restaurant) {
-            return res.json({ success: false, message: 'Restaurant not found. Please try again.' });
-        }
-
-        // Build order items
-        const items = cartItems.map(ci => ({
-            food_id: ci.food_id._id,
-            food_name: ci.food_id.food_name,
-            price: ci.food_id.price,
-            quantity: ci.quantity,
-        }));
-
-        const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-        const delivery = 30.00;
-        const total_price = parseFloat((subtotal + delivery).toFixed(2));
-        const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-
-
-        // Create order
-        let order;
-        try {
-            order = await Order.create({
-                userId: userId,
-                restaurantId: restaurantId,
-                items,
-                totalPrice: total_price,
-                delivery_name,
-                delivery_phone,
-                delivery_address,
-                payment_method: (payment_method === 'online' ? 'Online Payment' : 'Cash on Delivery'),
-                paymentDetails: {
-                    upiId: upiId || '',
-                    cardNumber: cardNumber || '',
-                    transactionId: transactionId || ''
-                },
-                paymentStatus: paymentStatus || 'Pending',
-                orderStatus: 'Placed',
-                restaurantStatus: 'Pending',
-                estimatedDeliveryTime: '30-45 mins',
-                verificationCode: verificationCode,
-            });
-        } catch (dbErr) {
-            console.error('Order creation DB error:', dbErr);
-            return res.json({ success: false, message: 'Database error while creating order.' });
-        }
-
-        // Increment orderCount for each food item
-        for (const item of items) {
-            await FoodItem.findByIdAndUpdate(item.food_id, {
-                $inc: { orderCount: item.quantity }
-            });
-        }
-
-        const io = req.app.get('io');
-        io.to(`restaurant_${order.restaurantId}`).emit('new_order', order);
-
-        const orderEmitter = req.app.get('orderEmitter');
-        if (orderEmitter) {
-            orderEmitter.emit(`new_order_${order.restaurantId}`, order);
-        }
-
-        // Clear cart
-        await Cart.deleteMany({ user_id: userId });
-
-        res.json({
-            success: true,
-            order_id: order._id,
-            redirect: `/order_success.html?order_id=${order._id}`,
-        });
-    } catch (err) {
-        console.error('Order place error:', err);
-        res.status(500).json({ success: false, message: 'Order placement failed. Please try again.' });
+    if (!delivery_name || !delivery_phone || !delivery_address) {
+      return res.status(400).json({
+        success: false,
+        message: 'All delivery fields are required.',
+      });
     }
-});
 
-// ── GET /api/orders/history ───────────────────────────────────────────────────
-router.get('/history', verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const orders = await Order.find({ userId: userId }).sort({ createdAt: -1 });
-        res.json({ success: true, orders });
-    } catch (err) {
-        console.error('Order history error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+    if (payment_method === 'upi' && !upiId) {
+      return res.status(400).json({
+        success: false,
+        message: 'UPI ID is required for UPI payment.',
+      });
     }
-});
 
-// ── GET /api/orders – all orders (admin/dashboard) ───────────────────────────
-router.get('/', async (req, res) => {
-    try {
-        const orders = await Order.find().populate('userId', 'name email').sort({ createdAt: -1 });
-        res.json({ success: true, orders });
-    } catch (err) {
-        console.error('Fetch all orders error:', err);
-        res.status(500).json({ success: false, message: 'Server error fetching orders.' });
+    if (payment_method === 'card' && !cardNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Card number is required for Card payment.',
+      });
     }
-});
 
-// ── GET /api/orders/restaurant/:restaurantId ──────────────────────────────────
-router.get('/restaurant/:restaurantId', async (req, res) => {
-    try {
-        const { restaurantId } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
-            return res.status(400).json({ success: false, message: 'Invalid Restaurant ID.' });
-        }
+    let cartItems = await Cart.find({ user_id: userId }).populate('food_id');
+    cartItems = cartItems.filter((ci) => ci.food_id);
 
-        const orders = await Order.find({ restaurantId })
-            .populate('userId', 'name email phone')
-            .sort({ createdAt: -1 });
-        res.json({ success: true, orders });
-    } catch (err) {
-        console.error('Fetch restaurant orders error:', err);
-        res.status(500).json({ success: false, message: 'Server error fetching orders.' });
+    if (!cartItems.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your cart is empty or the items are no longer available.',
+      });
     }
-});
 
-// ── GET /api/orders/:id ───────────────────────────────────────────────────────
-router.get('/:id', verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { id } = req.params;
-
-        if (!mongoose.Types.ObjectId.isValid(id))
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-
-        const order = await Order.findOne({ _id: id, userId: userId }).populate('delivery_partner_id', 'name averageRating phone');
-        if (!order)
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-
-        res.json({ success: true, order, verificationCode: order.verificationCode });
-    } catch (err) {
-        console.error('Order by ID error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+    const restaurantId = cartItems[0].food_id?.restaurantId;
+    if (!restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Items in cart are not associated with a restaurant.',
+      });
     }
-});
 
-// ── POST /api/orders/:id/rate-delivery ────────────────────────────────────────
-router.post('/:id/rate-delivery', verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { id } = req.params;
-        const { rating } = req.body; // 1 to 5
-
-        if (!rating || rating < 1 || rating > 5) {
-            return res.status(400).json({ success: false, message: 'Valid rating between 1 and 5 is required.' });
-        }
-
-        const order = await Order.findOne({ _id: id, userId: userId });
-        if (!order || order.orderStatus !== 'Delivered') {
-            return res.status(400).json({ success: false, message: 'Can only rate delivered orders.' });
-        }
-
-        const partnerId = order.delivery_partner_id;
-        if (!partnerId) {
-            return res.status(400).json({ success: false, message: 'No delivery partner assigned to this order.' });
-        }
-
-        const partner = await DeliveryPartner.findById(partnerId);
-        if (!partner) {
-            return res.status(404).json({ success: false, message: 'Delivery partner not found.' });
-        }
-
-        const oldAvg = partner.averageRating || 0;
-        const oldCount = partner.ratingCount || 0;
-        const newCount = oldCount + 1;
-        const newAvg = ((oldAvg * oldCount) + Number(rating)) / newCount;
-
-        partner.ratingCount = newCount;
-        partner.averageRating = Number(newAvg.toFixed(1));
-        await partner.save();
-
-        res.json({ success: true, message: 'Rating submitted successfully!', averageRating: partner.averageRating });
-    } catch (err) {
-        console.error('Rating error:', err);
-        res.status(500).json({ success: false, message: 'Server error submitting rating.' });
+    // Ensure single-restaurant cart
+    const multiRestaurant = cartItems.some(
+      (ci) => String(ci.food_id.restaurantId) !== String(restaurantId)
+    );
+    if (multiRestaurant) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cart contains items from multiple restaurants. Please order from one restaurant at a time.',
+      });
     }
-});
+
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: 'Restaurant not found. Please try again.',
+      });
+    }
+
+    const items = cartItems.map((ci) => ({
+      food_id: ci.food_id._id,
+      food_name: ci.food_id.food_name,
+      price: ci.food_id.price,
+      quantity: ci.quantity,
+    }));
+
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const delivery = 30.0;
+    const total_price = parseFloat((subtotal + delivery).toFixed(2));
+    const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+
+    const methodLabel =
+      payment_method === 'online' || payment_method === 'Online Payment'
+        ? 'Online Payment'
+        : 'Cash on Delivery';
+
+    const order = await Order.create({
+      userId,
+      restaurantId,
+      items,
+      totalPrice: total_price,
+      delivery_name,
+      delivery_phone,
+      delivery_address,
+      payment_method: methodLabel,
+      paymentDetails: {
+        upiId: upiId || '',
+        cardNumber: cardNumber ? `****${String(cardNumber).slice(-4)}` : '',
+        transactionId: transactionId || '',
+      },
+      paymentStatus: paymentStatus || (methodLabel === 'Online Payment' ? 'Paid' : 'Pending'),
+      orderStatus: 'Placed',
+      restaurantStatus: 'Pending',
+      estimatedDeliveryTime: '30-45 mins',
+      verificationCode,
+    });
+
+    await Promise.all(
+      items.map((item) =>
+        FoodItem.findByIdAndUpdate(item.food_id, {
+          $inc: { orderCount: item.quantity },
+        })
+      )
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`restaurant_${order.restaurantId}`).emit('new_order', order);
+    }
+
+    const orderEmitter = req.app.get('orderEmitter');
+    if (orderEmitter) {
+      orderEmitter.emit(`new_order_${order.restaurantId}`, order);
+    }
+
+    await Cart.deleteMany({ user_id: userId });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Order placed successfully',
+      order_id: order._id,
+      order,
+      redirect: `/order-success?order_id=${order._id}`,
+    });
+  })
+);
+
+// ── GET /api/orders/history ─────────────────────────────────────────────────
+router.get(
+  '/history',
+  ...requireUser,
+  asyncHandler(async (req, res) => {
+    const orders = await Order.find({ userId: req.user.id })
+      .populate('restaurantId', 'restaurantName branchName')
+      .populate('delivery_partner_id', 'name phone averageRating')
+      .sort({ createdAt: -1 });
+    return res.json({ success: true, orders });
+  })
+);
+
+// ── GET /api/orders – admin only ────────────────────────────────────────────
+router.get(
+  '/',
+  ...requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const orders = await Order.find()
+      .populate('userId', 'name email')
+      .populate('restaurantId', 'restaurantName branchName')
+      .sort({ createdAt: -1 });
+    return res.json({ success: true, orders });
+  })
+);
+
+// ── GET /api/orders/:id ─────────────────────────────────────────────────────
+router.get(
+  '/:id',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
+    }
+
+    const order = await Order.findById(id)
+      .populate('delivery_partner_id', 'name averageRating phone')
+      .populate('restaurantId', 'restaurantName branchName');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
+    }
+
+    // Customer can only view own orders; restaurant/delivery/admin with assignment access
+    const role = req.user.role;
+    const isOwner = String(order.userId) === String(req.user.id);
+    const isRestaurant = role === 'restaurant' && String(order.restaurantId?._id || order.restaurantId) === String(req.user.id);
+    const isDelivery =
+      role === 'delivery' && String(order.delivery_partner_id?._id || order.delivery_partner_id) === String(req.user.id);
+    const isAdmin = role === 'admin';
+
+    if (!isOwner && !isRestaurant && !isDelivery && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Forbidden.' });
+    }
+
+    const payload = {
+      success: true,
+      order,
+    };
+
+    // Only customer and delivery need verification code visibility
+    if (isOwner || isDelivery || isAdmin) {
+      payload.verificationCode = order.verificationCode;
+    }
+
+    return res.json(payload);
+  })
+);
+
+// ── POST /api/orders/:id/rate-delivery ──────────────────────────────────────
+router.post(
+  '/:id/rate-delivery',
+  ...requireUser,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { rating } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid rating between 1 and 5 is required.',
+      });
+    }
+
+    const order = await Order.findOne({ _id: id, userId: req.user.id });
+    if (!order || order.orderStatus !== 'Delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only rate delivered orders.',
+      });
+    }
+
+    const partnerId = order.delivery_partner_id;
+    if (!partnerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No delivery partner assigned to this order.',
+      });
+    }
+
+    const partner = await DeliveryPartner.findById(partnerId);
+    if (!partner) {
+      return res.status(404).json({ success: false, message: 'Delivery partner not found.' });
+    }
+
+    const oldAvg = partner.averageRating || 0;
+    const oldCount = partner.ratingCount || 0;
+    const newCount = oldCount + 1;
+    const newAvg = (oldAvg * oldCount + Number(rating)) / newCount;
+
+    partner.ratingCount = newCount;
+    partner.averageRating = Number(newAvg.toFixed(1));
+    await partner.save();
+
+    return res.json({
+      success: true,
+      message: 'Rating submitted successfully!',
+      averageRating: partner.averageRating,
+    });
+  })
+);
 
 module.exports = router;

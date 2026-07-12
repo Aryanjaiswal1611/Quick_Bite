@@ -2,10 +2,16 @@ import { io } from 'socket.io-client'
 
 let socket = null
 
+function getSocketUrl() {
+  // Empty string = same origin (Vite proxy in dev, backend SPA host in prod)
+  return import.meta.env.VITE_API_URL || undefined
+}
+
 function initSocket() {
   if (!socket) {
-    socket = io({
-      autoConnect: false
+    socket = io(getSocketUrl(), {
+      autoConnect: false,
+      path: '/socket.io'
     })
   }
   return socket
@@ -29,7 +35,6 @@ export function getSocket() {
   return socket
 }
 
-// Restaurant room
 export function joinRestaurantRoom(restaurantId) {
   const s = connectSocket()
   s.emit('join_restaurant_room', restaurantId)
@@ -39,7 +44,6 @@ export function leaveRestaurantRoom(restaurantId) {
   socket?.emit('leave_restaurant_room', restaurantId)
 }
 
-// Order tracking room
 export function joinOrderRoom(orderId) {
   const s = connectSocket()
   s.emit('join_order_room', orderId)
@@ -49,14 +53,13 @@ export function leaveOrderRoom(orderId) {
   socket?.emit('leave_order_room', orderId)
 }
 
-// Delivery location update
 export function sendLocationUpdate(orderId, lat, lng) {
   socket?.emit('delivery_location_update', { orderId, lat, lng })
 }
 
-// Event listeners
 export function onNewOrder(callback) {
-  socket?.on('new_order', callback)
+  const s = connectSocket()
+  s.on('new_order', callback)
 }
 
 export function offNewOrder(callback) {
@@ -64,7 +67,8 @@ export function offNewOrder(callback) {
 }
 
 export function onStatusUpdate(callback) {
-  socket?.on('status_update', callback)
+  const s = connectSocket()
+  s.on('status_update', callback)
 }
 
 export function offStatusUpdate(callback) {
@@ -72,7 +76,8 @@ export function offStatusUpdate(callback) {
 }
 
 export function onLocationUpdate(callback) {
-  socket?.on('location_update', callback)
+  const s = connectSocket()
+  s.on('location_update', callback)
 }
 
 export function offLocationUpdate(callback) {

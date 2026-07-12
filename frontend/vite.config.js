@@ -1,32 +1,40 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-const projectRoot = fileURLToPath(new URL('.', import.meta.url))
-const rootEnvPath = path.resolve(projectRoot, '..', '.env')
-const rootEnv = fs.existsSync(rootEnvPath) ? fs.readFileSync(rootEnvPath, 'utf8') : ''
-const backendPort = rootEnv.match(/^PORT=(\d+)/m)?.[1] || process.env.PORT || '8000'
-const backendTarget = `http://localhost:${backendPort}`
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const backendPort = env.VITE_BACKEND_PORT || process.env.PORT || '8000'
+  const backendTarget = env.VITE_PROXY_TARGET || `http://localhost:${backendPort}`
 
-export default defineConfig({
-  root: projectRoot,
-  plugins: [react()],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: backendTarget,
-        changeOrigin: true
-      },
-      '/images': {
-        target: backendTarget,
-        changeOrigin: true
-      },
-      '/socket.io': {
-        target: backendTarget,
-        ws: true
+  return {
+    plugins: [react()],
+    server: {
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: backendTarget,
+          changeOrigin: true
+        },
+        '/images': {
+          target: backendTarget,
+          changeOrigin: true
+        },
+        '/socket.io': {
+          target: backendTarget,
+          ws: true
+        }
+      }
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'react-router-dom'],
+            maps: ['leaflet', 'react-leaflet']
+          }
+        }
       }
     }
   }

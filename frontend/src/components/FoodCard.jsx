@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 
 export default function FoodCard({ food }) {
   const [isAdding, setIsAdding] = useState(false)
   const [added, setAdded] = useState(false)
   const { addToCart } = useCart()
-  const navigate = useNavigate()
 
   const isRestaurantOnline = food.restaurantId?.isLoggedIn && food.restaurantId?.isActive
   const isOffline = !isRestaurantOnline

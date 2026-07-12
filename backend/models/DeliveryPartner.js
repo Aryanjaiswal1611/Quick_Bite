@@ -25,7 +25,7 @@ const deliveryPartnerSchema = new mongoose.Schema({
     },
     vehicle_type: {
         type: String,
-        enum: ['Bike', 'Scooter', 'Bicycle'],
+        enum: ['Bike', 'Scooter', 'Bicycle', 'Car'],
         default: 'Bike',
     },
     is_online: {

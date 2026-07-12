@@ -1,69 +1,64 @@
 const express = require('express');
 const router = express.Router();
 const FoodItem = require('../models/FoodItem');
+const { asyncHandler } = require('../utils/response');
 
-// ── GET /api/foods – all food items ──────────────────────────────────────────
-router.get('/', async (req, res) => {
-    try {
-        const foods = await FoodItem.find({ availability: true })
-                                    .populate('restaurantId', 'isLoggedIn isActive')
-                                    .sort({ category: 1, food_name: 1 });
-        res.json({ success: true, foods });
-    } catch (err) {
-        console.error('Food fetch error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
-    }
-});
+// ── GET /api/foods ──────────────────────────────────────────────────────────
+router.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    const foods = await FoodItem.find({ availability: true })
+      .populate('restaurantId', 'restaurantName branchName isLoggedIn isActive')
+      .sort({ category: 1, food_name: 1 });
+    return res.json({ success: true, foods });
+  })
+);
 
-// ── GET /api/foods/categories – distinct categories ───────────────────────────
-// NOTE: must be declared BEFORE /api/foods/:id to avoid route conflict
-router.get('/categories', async (req, res) => {
-    try {
-        const categories = await FoodItem.distinct('category', { availability: true });
-        res.json({ success: true, categories: categories.sort() });
-    } catch (err) {
-        console.error('Category fetch error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
-    }
-});
+// ── GET /api/foods/categories ───────────────────────────────────────────────
+router.get(
+  '/categories',
+  asyncHandler(async (_req, res) => {
+    const categories = await FoodItem.distinct('category', { availability: true });
+    return res.json({ success: true, categories: categories.sort() });
+  })
+);
 
-// ── GET /api/foods/featured – featured items for homepage ─────────────────────
-router.get('/featured', async (req, res) => {
-    try {
-        const foods = await FoodItem.find({ availability: true, is_featured: true })
-                                    .populate('restaurantId', 'isLoggedIn isActive')
-                                    .limit(6);
-        res.json({ success: true, foods });
-    } catch (err) {
-        console.error('Featured fetch error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
-    }
-});
+// ── GET /api/foods/featured ─────────────────────────────────────────────────
+router.get(
+  '/featured',
+  asyncHandler(async (_req, res) => {
+    const foods = await FoodItem.find({ availability: true, is_featured: true })
+      .populate('restaurantId', 'restaurantName branchName isLoggedIn isActive')
+      .limit(6);
+    return res.json({ success: true, foods });
+  })
+);
 
-// ── GET /api/foods/recommended – popular items based on order count ───────────
-router.get('/recommended', async (req, res) => {
-    try {
-        const foods = await FoodItem.find({ availability: true })
-                                    .populate('restaurantId', 'isLoggedIn isActive')
-                                    .sort({ orderCount: -1 })
-                                    .limit(4);
-        res.json({ success: true, foods });
-    } catch (err) {
-        console.error('Recommended fetch error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
-    }
-});
+// ── GET /api/foods/recommended ──────────────────────────────────────────────
+router.get(
+  '/recommended',
+  asyncHandler(async (_req, res) => {
+    const foods = await FoodItem.find({ availability: true })
+      .populate('restaurantId', 'restaurantName branchName isLoggedIn isActive')
+      .sort({ orderCount: -1 })
+      .limit(4);
+    return res.json({ success: true, foods });
+  })
+);
 
-// ── GET /api/foods/:id – single food item ─────────────────────────────────────
-router.get('/:id', async (req, res) => {
-    try {
-        const food = await FoodItem.findById(req.params.id);
-        if (!food) return res.status(404).json({ success: false, message: 'Food item not found.' });
-        res.json({ success: true, food });
-    } catch (err) {
-        console.error('Food by ID error:', err);
-        res.status(500).json({ success: false, message: 'Server error.' });
+// ── GET /api/foods/:id ──────────────────────────────────────────────────────
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const food = await FoodItem.findById(req.params.id).populate(
+      'restaurantId',
+      'restaurantName branchName isLoggedIn isActive'
+    );
+    if (!food) {
+      return res.status(404).json({ success: false, message: 'Food item not found.' });
     }
-});
+    return res.json({ success: true, food });
+  })
+);
 
 module.exports = router;

@@ -1,122 +1,192 @@
-# 🍔 QuickBite – Food Delivery App
+# QuickBite – Food Delivery Platform
 
-A full-stack food delivery web application built with **Node.js + Express** backend and a modern **HTML/CSS/JS** frontend.
+Production-ready full-stack food delivery application with **customer**, **restaurant**, and **delivery partner** portals.
 
-> ✅ PHP has been fully removed. The project runs entirely on Node.js.
+```
+Quick_Bite/
+├── frontend/     # React + Vite SPA
+└── backend/      # Node.js + Express + MongoDB API
+```
 
 ---
 
-## 🚀 Quick Start
+## Tech Stack
 
-### 1. Import Database
-Open **phpMyAdmin** and import:
-```
-database/food_delivery.sql
-```
+| Layer    | Stack                                              |
+|----------|----------------------------------------------------|
+| Frontend | React 18, React Router 6, Vite, Socket.IO client   |
+| Backend  | Express, Mongoose, JWT, bcrypt, Multer, Socket.IO  |
+| Database | MongoDB                                            |
+| Payments | Razorpay (with mock/dummy mode for local dev)      |
 
-### 2. Configure Environment
-Edit `backend/.env`:
-```env
-DB_HOST=localhost
-DB_USER=root
-DB_PASS=           # your MySQL password
-DB_NAME=food_delivery
-SESSION_SECRET=quickbite_super_secret_key_2024
-PORT=3000
-```
+---
 
-### 3. Install & Run
+## Prerequisites
+
+- Node.js 18+
+- MongoDB running locally (or a MongoDB Atlas URI)
+
+---
+
+## Quick Start
+
+### 1. Backend
+
 ```bash
 cd backend
+cp .env.example .env   # edit secrets as needed
 npm install
-node app.js
+npm run seed           # demo users, restaurant, menu
+npm run dev            # http://localhost:8000
 ```
 
-### 4. Open Browser
+### 2. Frontend
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev            # http://localhost:5173
 ```
-http://localhost:3000
+
+The Vite dev server proxies `/api`, `/images`, and `/socket.io` to the backend.
+
+---
+
+## Demo Accounts
+
+| Role       | Email                   | Password     |
+|------------|-------------------------|--------------|
+| Customer   | customer@quickbite.com  | password123  |
+| Restaurant | kitchen@quickbite.com   | password123  |
+| Delivery   | rider@quickbite.com     | password123  |
+| Admin      | admin@food.com          | admin123     |
+
+---
+
+## Production Build
+
+### Frontend
+
+```bash
+cd frontend
+npm run build
+```
+
+Output: `frontend/dist/`
+
+### Backend (serves API + SPA)
+
+```bash
+cd backend
+# Ensure frontend/dist exists
+NODE_ENV=production npm start
+```
+
+When `frontend/dist` is present, the backend serves the SPA and API from the same origin (recommended for simple deploys).
+
+For split hosting, set:
+
+- Backend `CORS_ORIGIN` to your frontend origin
+- Frontend `VITE_API_URL` to your API origin (e.g. `https://api.example.com`)
+
+---
+
+## Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable            | Description                          | Default                                      |
+|---------------------|--------------------------------------|----------------------------------------------|
+| `PORT`              | API port                             | `8000`                                       |
+| `MONGO_URI`         | MongoDB connection string            | `mongodb://localhost:27017/food_delivery`    |
+| `JWT_SECRET`        | JWT signing secret                   | *(required in production)*                   |
+| `JWT_EXPIRES_IN`    | Token lifetime                       | `1d`                                         |
+| `SESSION_SECRET`    | Session cookie secret                | *(required in production)*                   |
+| `CORS_ORIGIN`       | Allowed origins (`*` or CSV)         | `*`                                          |
+| `NODE_ENV`          | `development` / `production`         | `development`                                |
+| `RAZORPAY_KEY_ID`   | Razorpay key (optional)              | dummy keys → mock payments                   |
+| `RAZORPAY_KEY_SECRET` | Razorpay secret                    | —                                            |
+
+### Frontend (`frontend/.env`)
+
+| Variable             | Description                                      |
+|----------------------|--------------------------------------------------|
+| `VITE_API_URL`       | API origin (empty = same-origin / Vite proxy)    |
+| `VITE_BACKEND_PORT`  | Backend port for dev proxy (default `8000`)      |
+| `VITE_PROXY_TARGET`  | Full proxy target override                       |
+
+---
+
+## API Overview
+
+| Area        | Base path            | Auth role      |
+|-------------|----------------------|----------------|
+| Customer    | `/api/login`, `/api/signup`, `/api/me` | JWT `user` |
+| Cart        | `/api/cart`          | user           |
+| Orders      | `/api/orders`        | user / admin   |
+| Foods       | `/api/foods`         | public         |
+| Restaurant  | `/api/restaurant`    | `restaurant`   |
+| Dishes      | `/api/dishes`        | `restaurant`   |
+| Delivery    | `/api/delivery`      | `delivery`     |
+| Admin       | `/api/admin`         | `admin`        |
+| Payments    | `/api/payments`      | user           |
+| Health      | `/api/health`        | public         |
+
+All responses use:
+
+```json
+{ "success": true, "message": "...", "data": {} }
+```
+
+or
+
+```json
+{ "success": false, "message": "...", "errors": {} }
 ```
 
 ---
 
-## 📁 Project Structure
+## Portals
 
+| Portal     | Routes                                              |
+|------------|-----------------------------------------------------|
+| Customer   | `/`, `/menu`, `/cart`, `/checkout`, `/order-history` |
+| Restaurant | `/restaurant/login`, `/restaurant/dashboard`, `/restaurant/menu` |
+| Delivery   | `/delivery/login`, `/delivery/dashboard`            |
+
+---
+
+## Scripts
+
+### Backend
+
+```bash
+npm start      # production
+npm run dev    # nodemon
+npm run seed   # seed demo data
 ```
-food-delivery-app/
-├── backend/                 ← Node.js + Express server
-│   ├── app.js               ← Entry point
-│   ├── .env                 ← Configuration
-│   ├── package.json
-│   ├── config/db.js         ← MySQL pool
-│   ├── middleware/auth.js   ← Session auth
-│   └── routes/
-│       ├── auth.js          ← /api/login, /api/signup, /api/logout
-│       ├── food.js          ← /api/foods, /api/foods/featured
-│       ├── cart.js          ← /api/cart (CRUD)
-│       ├── orders.js        ← /api/orders/place, /api/orders/history
-│       └── admin.js         ← /api/admin/* (dashboard, foods, orders)
-├── public/                  ← Static HTML frontend (auto-served)
-│   ├── index.html           ← Homepage
-│   ├── menu.html            ← Food menu with search/filter
-│   ├── cart.html            ← Shopping cart
-│   ├── checkout.html        ← Checkout & order placement
-│   ├── login.html           ← User login
-│   ├── signup.html          ← User registration
-│   ├── order_history.html   ← Order tracking
-│   ├── order_success.html   ← Order confirmation
-│   ├── css/style.css        ← Global styles
-│   ├── js/script.js         ← Frontend JS (API calls, cart, auth)
-│   ├── images/              ← Food images
-│   └── admin/               ← Admin panel pages
-│       ├── admin_login.html
-│       ├── dashboard.html
-│       ├── food_list.html
-│       ├── add_food.html
-│       ├── edit_food.html
-│       └── manage_orders.html
-└── database/
-    └── food_delivery.sql    ← MySQL schema + seed data
+
+### Frontend
+
+```bash
+npm run dev      # Vite dev server
+npm run build    # production build
+npm run preview  # preview production build
+npm run lint     # ESLint
 ```
 
 ---
 
-## 🔑 Default Login Credentials
+## Security Notes
 
-| Role  | Email              | Password  |
-|-------|--------------------|-----------|
-| Admin | admin@food.com     | admin123  |
-| User  | Sign up to create  | —         |
+- Passwords hashed with bcrypt
+- JWT Bearer auth with role-based authorization
+- Auth rate limiting on login/signup endpoints
+- Global rate limiting
+- Input validation on all auth and write endpoints
+- Card numbers truncated before storage
+- Unauthenticated listing of all orders removed
+- Upload MIME/size limits on dish images
 
----
-
-## 🌐 API Reference
-
-| Method | Endpoint                       | Auth     | Description              |
-|--------|--------------------------------|----------|--------------------------|
-| POST   | `/api/login`                   | —        | User login               |
-| POST   | `/api/signup`                  | —        | User registration        |
-| POST   | `/api/logout`                  | —        | Logout                   |
-| GET    | `/api/me`                      | —        | Session info             |
-| GET    | `/api/foods`                   | —        | All food items           |
-| GET    | `/api/foods/featured`          | —        | Featured items           |
-| GET    | `/api/cart`                    | User     | Get cart                 |
-| POST   | `/api/cart/add`                | User     | Add to cart              |
-| PUT    | `/api/cart/update`             | User     | Update quantity          |
-| DELETE | `/api/cart/remove`             | User     | Remove from cart         |
-| POST   | `/api/orders/place`            | User     | Place order              |
-| GET    | `/api/orders/history`          | User     | Order history            |
-| GET    | `/api/admin/stats`             | Admin    | Dashboard stats          |
-| GET    | `/api/admin/foods`             | Admin    | List all food items      |
-| POST   | `/api/admin/foods`             | Admin    | Add food item            |
-| PUT    | `/api/admin/foods/:id`         | Admin    | Edit food item           |
-| DELETE | `/api/admin/foods/:id`         | Admin    | Delete food item         |
-| GET    | `/api/admin/orders`            | Admin    | All orders               |
-| PUT    | `/api/admin/orders/:id/status` | Admin    | Update order status      |
-
----
-
-## 🛠 Tech Stack
-
-- **Backend**: Node.js, Express.js, express-session, bcryptjs, multer, mysql2
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript, Font Awesome
-- **Database**: MySQL (MariaDB compatible)
+**Change all secrets before production deployment.**

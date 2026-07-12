@@ -1,4 +1,4 @@
-@import '../../../public/css/style.css';
+@import './base.css';
 
 :root {
   --primary: #ff6b35;
