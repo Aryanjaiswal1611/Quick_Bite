@@ -18,6 +18,7 @@ export default function RestaurantMenu() {
     price: '',
     category: '',
     availability: true,
+    is_featured: false,
     image: null
   })
 
@@ -58,6 +59,7 @@ export default function RestaurantMenu() {
       price: '',
       category: '',
       availability: true,
+      is_featured: false,
       image: null
     })
     setEditingDish(null)
@@ -72,6 +74,7 @@ export default function RestaurantMenu() {
     formDataToSend.append('price', formData.price)
     formDataToSend.append('category', formData.category)
     formDataToSend.append('availability', formData.availability)
+    formDataToSend.append('is_featured', formData.is_featured)
     if (formData.image) {
       formDataToSend.append('image', formData.image)
     }
@@ -103,6 +106,7 @@ export default function RestaurantMenu() {
       price: dish.price,
       category: dish.category,
       availability: dish.availability,
+      is_featured: dish.is_featured || false,
       image: null
     })
     setShowModal(true)
@@ -317,6 +321,17 @@ export default function RestaurantMenu() {
                     onChange={handleChange}
                   />
                   Available for order
+                </label>
+              </div>
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    name="is_featured"
+                    checked={formData.is_featured}
+                    onChange={handleChange}
+                  />
+                  Featured Dish (Shows on Homepage)
                 </label>
               </div>
               <div className="modal-actions">

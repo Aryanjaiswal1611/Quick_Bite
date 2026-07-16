@@ -53,20 +53,6 @@ export default function Home() {
                 <i className="fas fa-play-circle"></i> How It Works
               </a>
             </div>
-            <div className="hero-stats">
-              <div className="stat-item">
-                <div className="stat-number">500+</div>
-                <div className="stat-label">Happy Customers</div>
-              </div>
-              <div className="stat-item">
-                <div className="stat-number">50+</div>
-                <div className="stat-label">Food Items</div>
-              </div>
-              <div className="stat-item">
-                <div className="stat-number">4.9★</div>
-                <div className="stat-label">Average Rating</div>
-              </div>
-            </div>
           </div>
           <div className="hero-image">
             <img

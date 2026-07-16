@@ -26,7 +26,7 @@ router.post(
   ...requireRestaurant,
   upload.single('image'),
   asyncHandler(async (req, res) => {
-    const { food_name, description, price, category, is_featured } = req.body;
+    const { food_name, description, price, category, is_featured, availability } = req.body;
     const restaurantId = req.user.id;
 
     if (!food_name || !price || !category) {
@@ -46,7 +46,7 @@ router.post(
       image: imageFile,
       is_featured: is_featured === 'true' || is_featured === true,
       restaurantId,
-      availability: true,
+      availability: availability === undefined ? true : (availability === 'true' || availability === true),
     });
 
     return res.status(201).json({

@@ -6,7 +6,7 @@ export default function FoodCard({ food }) {
   const [added, setAdded] = useState(false)
   const { addToCart } = useCart()
 
-  const isRestaurantOnline = food.restaurantId?.isLoggedIn && food.restaurantId?.isActive
+  const isRestaurantOnline = food.restaurantId?.isActive
   const isOffline = !isRestaurantOnline
 
   const handleAddToCart = async (e) => {
