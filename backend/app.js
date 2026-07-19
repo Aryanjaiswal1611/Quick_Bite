@@ -40,24 +40,54 @@ app.use(
 );
 
 // ── CORS ────────────────────────────────────────────────────────────────────
+const allowedOrigins = new Set();
+
+// Seed from CLIENT_URL (production frontend URL)
+if (config.clientUrl) {
+  config.clientUrl.split(',').forEach((u) => allowedOrigins.add(u.trim()));
+}
+
+// Seed from CORS_ORIGIN env var (comma-separated)
+if (config.corsOrigin && config.corsOrigin !== '*') {
+  config.corsOrigin.split(',').forEach((o) => allowedOrigins.add(o.trim()));
+}
+
+// Always allow local dev
+allowedOrigins.add('http://localhost:5173');
+allowedOrigins.add('http://localhost:3000');
+allowedOrigins.add('http://127.0.0.1:5173');
+
 const corsOptions = {
-  origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((s) => s.trim()),
+  origin: (origin, cb) => {
+    // Allow requests with no origin (server-to-server, apps, curl, etc.)
+    if (!origin || allowedOrigins.has(origin)) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // explicit preflight handler
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ── Rate limiting ───────────────────────────────────────────────────────────
+function skipPreflight(_req) {
+  return _req.method === 'OPTIONS';
+}
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: config.isProduction ? 300 : 1000,
   message: { success: false, message: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipPreflight,
 });
 
 const authLimiter = rateLimit({
@@ -66,6 +96,7 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many authentication attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipPreflight,
 });
 
 app.use(globalLimiter);
@@ -129,8 +160,9 @@ app.get('/api/health', (_req, res) => {
 // ── Socket.IO ───────────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: config.corsOrigin === '*' ? '*' : config.corsOrigin.split(',').map((s) => s.trim()),
+    origin: Array.from(allowedOrigins),
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 app.set('io', io);
@@ -186,6 +218,8 @@ server.listen(config.port, () => {
   console.log(`http://localhost:${config.port}`);
   // eslint-disable-next-line no-console
   console.log(`Environment: ${config.nodeEnv}`);
+  // eslint-disable-next-line no-console
+  console.log(`Allowed CORS origins: ${Array.from(allowedOrigins).join(', ')}`);
   // eslint-disable-next-line no-console
   console.log('=================================');
 });

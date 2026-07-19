@@ -76,7 +76,16 @@ async function request(method, endpoint, body = null) {
   } catch (err) {
     if (err instanceof ApiError) throw err
     const isProd = import.meta.env.PROD
-    const detail = isProd ? 'Production request failed. Ensure VITE_API_URL is set correctly.' : `Request to ${BASE_URL}${endpoint} failed`
+    let detail
+    if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+      detail = isProd
+        ? 'Network error: Ensure VITE_API_URL is set correctly in Vercel and CORS is configured on the backend.'
+        : `Network error: Check that the backend server is running at ${BASE_URL}`
+    } else {
+      detail = isProd
+        ? `Production request failed. Ensure VITE_API_URL is set correctly.`
+        : `Request to ${BASE_URL}${endpoint} failed`
+    }
     throw new ApiError(err.message || detail, {
       status: 0
     })
