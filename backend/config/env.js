@@ -23,6 +23,9 @@ const config = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_dummyKeyId12345',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'dummyKeySecret1234567890',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   isProduction: process.env.NODE_ENV === 'production',
 };
 

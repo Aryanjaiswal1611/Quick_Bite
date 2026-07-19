@@ -68,13 +68,16 @@ async function request(method, endpoint, body = null) {
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       method,
+      credentials: 'include',
       headers: getAuthHeaders(endpoint, isFormData),
       body: isFormData ? body : (body != null ? JSON.stringify(body) : null)
     })
     return handleResponse(response)
   } catch (err) {
     if (err instanceof ApiError) throw err
-    throw new ApiError(err.message || 'Network error. Please check your connection.', {
+    const isProd = import.meta.env.PROD
+    const detail = isProd ? 'Production request failed. Ensure VITE_API_URL is set correctly.' : `Request to ${BASE_URL}${endpoint} failed`
+    throw new ApiError(err.message || detail, {
       status: 0
     })
   }

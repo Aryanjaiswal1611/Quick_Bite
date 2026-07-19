@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const session = require('express-session');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -29,6 +30,14 @@ const orderEmitter = new EventEmitter();
 app.set('orderEmitter', orderEmitter);
 
 connectDB();
+
+// ── Security headers ─────────────────────────────────────────────────────────
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
+  })
+);
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsOptions = {
