@@ -40,32 +40,26 @@ app.use(
 );
 
 // ── CORS ────────────────────────────────────────────────────────────────────
-const allowedOrigins = new Set();
-
-// Seed from CLIENT_URL (production frontend URL)
-if (config.clientUrl) {
-  config.clientUrl.split(',').forEach((u) => allowedOrigins.add(u.trim()));
+// Build allowed origins list.
+// CORS_ORIGIN=* (default) → reflect request origin (works with any frontend URL)
+// CORS_ORIGIN set to specific URL(s) → restrict to those + CLIENT_URL + localhost
+let allowedOrigins;
+if (config.corsOrigin === '*') {
+  allowedOrigins = true; // reflects Origin header back
+} else {
+  const origins = new Set();
+  config.corsOrigin.split(',').forEach((o) => origins.add(o.trim()));
+  if (config.clientUrl) {
+    config.clientUrl.split(',').forEach((u) => origins.add(u.trim()));
+  }
+  origins.add('http://localhost:5173');
+  origins.add('http://localhost:3000');
+  origins.add('http://127.0.0.1:5173');
+  allowedOrigins = Array.from(origins);
 }
-
-// Seed from CORS_ORIGIN env var (comma-separated)
-if (config.corsOrigin && config.corsOrigin !== '*') {
-  config.corsOrigin.split(',').forEach((o) => allowedOrigins.add(o.trim()));
-}
-
-// Always allow local dev
-allowedOrigins.add('http://localhost:5173');
-allowedOrigins.add('http://localhost:3000');
-allowedOrigins.add('http://127.0.0.1:5173');
 
 const corsOptions = {
-  origin: (origin, cb) => {
-    // Allow requests with no origin (server-to-server, apps, curl, etc.)
-    if (!origin || allowedOrigins.has(origin)) {
-      cb(null, true);
-    } else {
-      cb(null, false);
-    }
-  },
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -160,7 +154,7 @@ app.get('/api/health', (_req, res) => {
 // ── Socket.IO ───────────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: Array.from(allowedOrigins),
+    origin: allowedOrigins === true ? true : Array.from(allowedOrigins),
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -219,7 +213,7 @@ server.listen(config.port, () => {
   // eslint-disable-next-line no-console
   console.log(`Environment: ${config.nodeEnv}`);
   // eslint-disable-next-line no-console
-  console.log(`Allowed CORS origins: ${Array.from(allowedOrigins).join(', ')}`);
+  console.log(`Allowed CORS origins: ${allowedOrigins === true ? '*' : Array.from(allowedOrigins).join(', ')}`);
   // eslint-disable-next-line no-console
   console.log('=================================');
 });

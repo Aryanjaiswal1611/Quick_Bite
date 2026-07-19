@@ -4,6 +4,14 @@
  */
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, _next) {
+  // JSON parse errors (malformed request body)
+  if (err && (err.type === 'entity.parse.failed' || err.name === 'SyntaxError')) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON in request body.',
+    });
+  }
+
   // Multer / upload errors
   if (err && err.name === 'MulterError') {
     return res.status(400).json({
