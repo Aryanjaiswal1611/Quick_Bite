@@ -29,7 +29,19 @@ const server = http.createServer(app);
 const orderEmitter = new EventEmitter();
 app.set('orderEmitter', orderEmitter);
 
-connectDB();
+// Trust proxy — required for Render, Vercel, and other PaaS deployments
+// so that rate limiting, sessions, and IP-based features see the real client IP.
+app.set('trust proxy', 1);
+
+// ── Database ─────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('FATAL: Database connection failed — server will start but all DB operations will fail.');
+    console.error(err);
+  }
+})();
 
 // ── Security headers ─────────────────────────────────────────────────────────
 app.use(
@@ -40,32 +52,75 @@ app.use(
 );
 
 // ── CORS ────────────────────────────────────────────────────────────────────
-// Build allowed origins list.
-// CORS_ORIGIN=* (default) → reflect request origin (works with any frontend URL)
-// CORS_ORIGIN set to specific URL(s) → restrict to those + CLIENT_URL + localhost
-let allowedOrigins;
-if (config.corsOrigin === '*') {
-  allowedOrigins = true; // reflects Origin header back
-} else {
-  const origins = new Set();
-  config.corsOrigin.split(',').forEach((o) => origins.add(o.trim()));
-  if (config.clientUrl) {
-    config.clientUrl.split(',').forEach((u) => origins.add(u.trim()));
+// Strategy:
+//   CORS_ORIGIN=*           → use a callback that reflects the request Origin
+//                             (works with ANY frontend URL + credentials)
+//   CORS_ORIGIN=<specific>  → restrict to those origins + CLIENT_URL + localhost dev URLs
+//
+// The callback also logs any origin that gets rejected, making it easy to
+// debug CORS issues in production.
+
+const buildOriginCallback = () => {
+  const raw = config.corsOrigin;
+  const clientUrls = config.clientUrl
+    ? config.clientUrl.split(',').map((u) => u.trim()).filter(Boolean)
+    : [];
+
+  // Fast path: reflect any origin (works with credentials because we return
+  // the actual request origin, not '*')
+  if (raw === '*') {
+    return (origin, cb) => {
+      if (!origin || origin === 'null') {
+        // server-to-server requests, file:// origins, or Postman — allow them
+        return cb(null, true);
+      }
+      return cb(null, origin);
+    };
   }
-  origins.add('http://localhost:5173');
-  origins.add('http://localhost:3000');
-  origins.add('http://127.0.0.1:5173');
-  allowedOrigins = Array.from(origins);
-}
+
+  // Specific origins mode
+  const allowed = new Set();
+  raw.split(',').forEach((o) => allowed.add(o.trim()));
+  clientUrls.forEach((u) => allowed.add(u));
+  // Dev URLs always allowed
+  allowed.add('http://localhost:5173');
+  allowed.add('http://localhost:3000');
+  allowed.add('http://127.0.0.1:5173');
+
+  // eslint-disable-next-line no-console
+  console.log(`CORS allowed origins: ${Array.from(allowed).join(', ')}`);
+
+  return (origin, cb) => {
+    if (!origin || origin === 'null') {
+      return cb(null, true);
+    }
+    if (allowed.has(origin)) {
+      return cb(null, true);
+    }
+    // eslint-disable-next-line no-console
+    console.warn(`[CORS] Blocked request from origin: "${origin}" — add this to CORS_ORIGIN or CLIENT_URL env vars`);
+    return cb(null, false);
+  };
+};
 
 const corsOptions = {
-  origin: allowedOrigins,
+  origin: buildOriginCallback(),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // explicit preflight handler
+// The cors middleware already handles OPTIONS preflight for ALL routes.
+// An explicit OPTIONS handler is not needed. However, for defense-in-depth
+// we register one that returns a clean 204 on every path.
+app.options('*', cors(corsOptions));
+
+// ── Request logging ─────────────────────────────────────────────────────────
+app.use((req, _res, next) => {
+  // eslint-disable-next-line no-console
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} — origin: ${req.headers.origin || 'same-origin'}`);
+  next();
+});
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -152,9 +207,10 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Socket.IO ───────────────────────────────────────────────────────────────
+// Derive allowed origins from the CORS config — same logic as above.
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins === true ? true : Array.from(allowedOrigins),
+    origin: buildOriginCallback(),
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -213,7 +269,7 @@ server.listen(config.port, () => {
   // eslint-disable-next-line no-console
   console.log(`Environment: ${config.nodeEnv}`);
   // eslint-disable-next-line no-console
-  console.log(`Allowed CORS origins: ${allowedOrigins === true ? '*' : Array.from(allowedOrigins).join(', ')}`);
+  console.log(`CORS origin mode: ${config.corsOrigin === '*' ? 'reflect (any origin allowed)' : config.corsOrigin}`);
   // eslint-disable-next-line no-console
   console.log('=================================');
 });

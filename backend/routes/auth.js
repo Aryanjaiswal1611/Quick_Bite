@@ -28,12 +28,16 @@ router.post(
     }
 
     if (Object.keys(errors).length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(`[SIGNUP] Validation failed for ${email || '(no email)'}:`, errors);
       return res.status(400).json({ success: false, message: 'Validation failed', errors });
     }
 
     const normalizedEmail = normalizeEmail(email);
     const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
+      // eslint-disable-next-line no-console
+      console.error(`[SIGNUP] Duplicate email attempted: ${normalizedEmail}`);
       return res.status(400).json({
         success: false,
         message: 'This email is already registered.',
@@ -74,6 +78,8 @@ router.post(
     const { email, password } = req.body;
 
     if (!email || !password) {
+      // eslint-disable-next-line no-console
+      console.error('[LOGIN] Missing fields — email or password not provided');
       return res.status(400).json({
         success: false,
         message: 'Please fill in all fields.',
@@ -82,6 +88,8 @@ router.post(
 
     const user = await User.findOne({ email: normalizeEmail(email) });
     if (!user || !(await bcrypt.compare(password, user.password))) {
+      // eslint-disable-next-line no-console
+      console.error(`[LOGIN] Failed login attempt for email: ${email}`);
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.',

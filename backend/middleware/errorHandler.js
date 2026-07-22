@@ -51,7 +51,11 @@ function errorHandler(err, req, res, _next) {
       : err.message || 'Internal server error';
 
   // eslint-disable-next-line no-console
-  console.error(`[${new Date().toISOString()}] ${status} - ${err.message || 'Unknown error'}`);
+  console.error(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} → ${status} - ${err.message || 'Unknown error'}`);
+  // eslint-disable-next-line no-console
+  console.error(`  Origin: ${req.headers.origin || 'N/A'}`);
+  // eslint-disable-next-line no-console
+  console.error(`  Referer: ${req.headers.referer || 'N/A'}`);
   if (!isInternal || process.env.NODE_ENV !== 'production') {
     // eslint-disable-next-line no-console
     console.error(err);

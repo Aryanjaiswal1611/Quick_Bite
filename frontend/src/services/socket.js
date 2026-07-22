@@ -9,9 +9,12 @@ function getSocketUrl() {
 
 function initSocket() {
   if (!socket) {
-    socket = io(getSocketUrl(), {
+    const url = getSocketUrl()
+    socket = io(url || undefined, {
       autoConnect: false,
-      path: '/socket.io'
+      path: '/socket.io',
+      withCredentials: true,
+      transports: ['websocket', 'polling']
     })
   }
   return socket
