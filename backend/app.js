@@ -52,68 +52,72 @@ app.use(
 );
 
 // ── CORS ────────────────────────────────────────────────────────────────────
-// Strategy:
-//   CORS_ORIGIN=*           → use a callback that reflects the request Origin
-//                             (works with ANY frontend URL + credentials)
-//   CORS_ORIGIN=<specific>  → restrict to those origins + CLIENT_URL + localhost dev URLs
-//
-// The callback also logs any origin that gets rejected, making it easy to
-// debug CORS issues in production.
+// Build the allowed-origins list from env vars + localhost dev URLs.
+const buildAllowedOrigins = () => {
+  const set = new Set();
 
-const buildOriginCallback = () => {
-  const raw = config.corsOrigin;
-  const clientUrls = config.clientUrl
-    ? config.clientUrl.split(',').map((u) => u.trim()).filter(Boolean)
-    : [];
+  // Dev URLs — always allowed
+  set.add('http://localhost:5173');
+  set.add('http://localhost:3000');
+  set.add('http://127.0.0.1:5173');
 
-  // Fast path: reflect any origin (works with credentials because we return
-  // the actual request origin, not '*')
-  if (raw === '*') {
-    return (origin, cb) => {
-      if (!origin || origin === 'null') {
-        // server-to-server requests, file:// origins, or Postman — allow them
-        return cb(null, true);
-      }
-      return cb(null, origin);
-    };
+  // CLIENT_URL — should be the production frontend URL (set on Render dashboard)
+  if (config.clientUrl) {
+    config.clientUrl.split(',').forEach((u) => set.add(u.trim()));
   }
 
-  // Specific origins mode
-  const allowed = new Set();
-  raw.split(',').forEach((o) => allowed.add(o.trim()));
-  clientUrls.forEach((u) => allowed.add(u));
-  // Dev URLs always allowed
-  allowed.add('http://localhost:5173');
-  allowed.add('http://localhost:3000');
-  allowed.add('http://127.0.0.1:5173');
+  // CORS_ORIGIN — if a specific list is given (not '*'), add them
+  if (config.corsOrigin && config.corsOrigin !== '*') {
+    config.corsOrigin.split(',').forEach((o) => set.add(o.trim()));
+  }
 
-  // eslint-disable-next-line no-console
-  console.log(`CORS allowed origins: ${Array.from(allowed).join(', ')}`);
-
-  return (origin, cb) => {
-    if (!origin || origin === 'null') {
-      return cb(null, true);
-    }
-    if (allowed.has(origin)) {
-      return cb(null, true);
-    }
-    // eslint-disable-next-line no-console
-    console.warn(`[CORS] Blocked request from origin: "${origin}" — add this to CORS_ORIGIN or CLIENT_URL env vars`);
-    return cb(null, false);
-  };
+  return Array.from(set);
 };
 
+const allowedOrigins = buildAllowedOrigins();
+const isOriginAllowed = (origin) => {
+  if (!origin || origin === 'null') return true; // server-to-server, Postman, file://
+  if (config.corsOrigin === '*') return true;     // reflect mode — all origins allowed
+  return allowedOrigins.includes(origin);
+};
+
+// ── Manual CORS middleware ─────────────────────────────────────────────────
+// This runs before ANY other middleware (including the cors npm package) and
+// guarantees CORS headers are present on every response. On Render (and other
+// PaaS hosts) this is the most reliable approach because it does not depend on
+// the cors package's callback internals or streaming behavior.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Vary', 'Origin');
+  } else if (origin) {
+    // eslint-disable-next-line no-console
+    console.warn(`[CORS] Blocked origin: "${origin}" — add this to the CORS_ORIGIN or CLIENT_URL env var on Render`);
+  }
+
+  // Respond immediately to preflight — never let it reach any route or rate limiter
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
+// ── cors npm package (belt + suspenders) ───────────────────────────────────
+// The manual middleware above already handles everything. This is just an
+// additional layer that may pick up edge cases the manual middleware misses.
 const corsOptions = {
-  origin: buildOriginCallback(),
+  origin: config.corsOrigin === '*' ? true : allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 app.use(cors(corsOptions));
-// The cors middleware already handles OPTIONS preflight for ALL routes.
-// An explicit OPTIONS handler is not needed. However, for defense-in-depth
-// we register one that returns a clean 204 on every path.
-app.options('*', cors(corsOptions));
 
 // ── Request logging ─────────────────────────────────────────────────────────
 app.use((req, _res, next) => {
@@ -207,10 +211,9 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Socket.IO ───────────────────────────────────────────────────────────────
-// Derive allowed origins from the CORS config — same logic as above.
 const io = new Server(server, {
   cors: {
-    origin: buildOriginCallback(),
+    origin: config.corsOrigin === '*' ? true : allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
