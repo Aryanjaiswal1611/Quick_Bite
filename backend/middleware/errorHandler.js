@@ -36,7 +36,7 @@ function errorHandler(err, req, res, _next) {
   // Duplicate key
   if (err && err.code === 11000) {
     const field = Object.keys(err.keyPattern || {})[0] || 'field';
-    return res.status(400).json({
+    return res.status(409).json({
       success: false,
       message: `${field} already exists`,
       errors: { [field]: 'Already registered' },

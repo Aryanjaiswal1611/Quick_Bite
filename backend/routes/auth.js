@@ -38,7 +38,7 @@ router.post(
     if (existing) {
       // eslint-disable-next-line no-console
       console.error(`[SIGNUP] Duplicate email attempted: ${normalizedEmail}`);
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: 'This email is already registered.',
         errors: { email: 'This email is already registered.' },

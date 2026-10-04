@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 const EventEmitter = require('events');
 
 const config = require('./config/env');
-const connectDB = require('./config/db');
+const { connectDB, getConnectionStatus } = require('./config/db');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const authRoutes = require('./routes/auth');
@@ -32,16 +32,6 @@ app.set('orderEmitter', orderEmitter);
 // Trust proxy — required for Render, Vercel, and other PaaS deployments
 // so that rate limiting, sessions, and IP-based features see the real client IP.
 app.set('trust proxy', 1);
-
-// ── Database ─────────────────────────────────────────────────────────────────
-(async () => {
-  try {
-    await connectDB();
-  } catch (err) {
-    console.error('FATAL: Database connection failed — server will start but all DB operations will fail.');
-    console.error(err);
-  }
-})();
 
 // ── Security headers ─────────────────────────────────────────────────────────
 app.use(
@@ -200,12 +190,19 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/feedback', feedbackRoutes);
 
 app.get('/api/health', (_req, res) => {
+  const dbStatus = getConnectionStatus();
   res.json({
     success: true,
     message: 'QuickBite API is healthy',
     data: {
       env: config.nodeEnv,
       timestamp: new Date().toISOString(),
+      database: {
+        connected: dbStatus.isConnected,
+        readyState: dbStatus.readyState,
+        host: dbStatus.host,
+        name: dbStatus.name,
+      },
     },
   });
 });
@@ -262,19 +259,30 @@ app.get('*', (req, res, next) => {
 
 app.use(errorHandler);
 
-server.listen(config.port, () => {
-  // eslint-disable-next-line no-console
-  console.log('=================================');
-  // eslint-disable-next-line no-console
-  console.log('QuickBite Server Running');
-  // eslint-disable-next-line no-console
-  console.log(`http://localhost:${config.port}`);
-  // eslint-disable-next-line no-console
-  console.log(`Environment: ${config.nodeEnv}`);
-  // eslint-disable-next-line no-console
-  console.log(`CORS origin mode: ${config.corsOrigin === '*' ? 'reflect (any origin allowed)' : config.corsOrigin}`);
-  // eslint-disable-next-line no-console
-  console.log('=================================');
-});
+const startServer = async () => {
+  try {
+    await connectDB();
+    server.listen(config.port, () => {
+      // eslint-disable-next-line no-console
+      console.log('=================================');
+      // eslint-disable-next-line no-console
+      console.log('QuickBite Server Running');
+      // eslint-disable-next-line no-console
+      console.log(`http://localhost:${config.port}`);
+      // eslint-disable-next-line no-console
+      console.log(`Environment: ${config.nodeEnv}`);
+      // eslint-disable-next-line no-console
+      console.log(`CORS origin mode: ${config.corsOrigin === '*' ? 'reflect (any origin allowed)' : config.corsOrigin}`);
+      // eslint-disable-next-line no-console
+      console.log('=================================');
+    });
+  } catch (err) {
+    console.error('FATAL: Failed to connect to MongoDB. Server will not start.');
+    console.error(err.message);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 module.exports = { app, server };
